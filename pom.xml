@@ -2,12 +2,16 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.zegelin</groupId>
-    <artifactId>cassandra-exporter</artifactId>
+    <groupId>com.zegelin.cassandra-exporter</groupId>
+    <artifactId>exporter-parent</artifactId>
     <version>1.0-SNAPSHOT</version>
-    <packaging>jar</packaging>
+    <packaging>pom</packaging>
 
-    <name>cassandra-exporter</name>
+    <modules>
+        <module>common</module>
+        <module>agent</module>
+        <module>standalone</module>
+    </modules>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -15,89 +19,65 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
 
-        <jersey.version>2.27</jersey.version>
+        <guice.version>4.2.0</guice.version>
     </properties>
 
-    <dependencies>
-        <dependency>
-            <groupId>org.glassfish.jersey.core</groupId>
-            <artifactId>jersey-common</artifactId>
-            <version>${jersey.version}</version>
-        </dependency>
+    <dependencyManagement>
+        <dependencies>
+            <!--<dependency>-->
+                <!--<groupId>com.google.inject</groupId>-->
+                <!--<artifactId>guice</artifactId>-->
+                <!--<version>${guice.version}</version>-->
+            <!--</dependency>-->
 
-        <dependency>
-            <groupId>org.glassfish.jersey.inject</groupId>
-            <artifactId>jersey-hk2</artifactId>
-            <version>${jersey.version}</version>
-        </dependency>
+            <!--<dependency>-->
+                <!--<groupId>com.google.inject.extensions</groupId>-->
+                <!--<artifactId>guice-assistedinject</artifactId>-->
+                <!--<version>${guice.version}</version>-->
+            <!--</dependency>-->
 
-        <dependency>
-            <groupId>org.glassfish.jersey.containers</groupId>
-            <artifactId>jersey-container-jdk-http</artifactId>
-            <version>${jersey.version}</version>
-        </dependency>
 
-        <dependency>
-            <groupId>org.glassfish.jersey.media</groupId>
-            <artifactId>jersey-media-json-jackson</artifactId>
-            <version>${jersey.version}</version>
-        </dependency>
+            <!--<dependency>-->
+                <!--<groupId>io.kubernetes</groupId>-->
+                <!--<artifactId>client-java</artifactId>-->
+                <!--<version>1.0.0-beta3</version>-->
+            <!--</dependency>-->
 
-        <dependency>
-            <groupId>org.apache.cassandra</groupId>
-            <artifactId>cassandra-all</artifactId>
-            <version>3.11.0</version>
-            <scope>provided</scope>
-        </dependency>
 
-        <dependency>
-            <groupId>com.datastax.cassandra</groupId>
-            <artifactId>cassandra-driver-core</artifactId>
-            <version>3.4.0</version>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+            <!--<dependency>-->
+                <!--<groupId>info.picocli</groupId>-->
+                <!--<artifactId>picocli</artifactId>-->
+                <!--<version>3.0.0-alpha-6</version>-->
+            <!--</dependency>-->
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.1.1</version>
 
-                <configuration>
-                    <filters>
-                        <filter>
-                            <artifact>*:*</artifact>
-                            <excludes>
-                                <exclude>META-INF/*.SF</exclude>
-                                <exclude>META-INF/*.DSA</exclude>
-                                <exclude>META-INF/*.RSA</exclude>
-                            </excludes>
-                        </filter>
-                    </filters>
-                    <transformers>
-                        <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>24.1-jre</version>
+            </dependency>
 
-                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                            <manifestEntries>
-                                <Premain-Class>com.zegelin.prometheus.cassandra.Agent</Premain-Class>
-                                <X-Compile-Source-JDK>${maven.compiler.source}</X-Compile-Source-JDK>
-                                <X-Compile-Target-JDK>${maven.compiler.target}</X-Compile-Target-JDK>
-                            </manifestEntries>
-                        </transformer>
 
-                    </transformers>
-                </configuration>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
+            <!--<dependency>-->
+                <!--<groupId>javax.inject</groupId>-->
+                <!--<artifactId>javax.inject</artifactId>-->
+                <!--<version>1</version>-->
+            <!--</dependency>-->
+
+
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>1.2.3</version>
+            </dependency>
+
+
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>jul-to-slf4j</artifactId>
+                <version>1.7.16</version>
+            </dependency>
+
+        </dependencies>
+    </dependencyManagement>
 </project>

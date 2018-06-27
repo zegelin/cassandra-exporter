@@ -57,7 +57,7 @@ To view the raw, plain text metrics either request the endpoint with with a clie
 ## Features
 
 ### Performance
-Element 
+
 JMX is *slow*, really slow. JMX adds significant overhead to every method invocation on exported MBean methods, even when those methods are called from within the same JVM.
 On a 300-ish table Cassandra node, trying to collect all exposed metrics via JVM resulted in a collection time that was upwards of 2-3 *seconds*.
 For exporters that run as a separate process there is additional overhead of inter-process communications and that time can reach the 10's of seconds.
@@ -84,7 +84,7 @@ The operation type is exported as the `operation` label.
 These metrics can then be queried:
 
     sum(cassandra_table_operation_latency_seconds_count) by (keyspace, operation) # total operrations by keyspace & type
-
+k
 
 Element                                              | Value
 ---------------------------------------------------- |------
