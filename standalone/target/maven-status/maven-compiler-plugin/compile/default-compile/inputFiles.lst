@@ -1,6 +1,0 @@
-/home/adam/Projects/cassandra-exporter/standalone/src/main/java/org/apache/cassandra/locator/EndpointSnitchInfoMBean.java
-/home/adam/Projects/cassandra-exporter/standalone/src/main/java/org/apache/cassandra/metrics/CassandraMetricsRegistry.java
-/home/adam/Projects/cassandra-exporter/standalone/src/main/java/org/apache/cassandra/service/StorageServiceMBean.java
-/home/adam/Projects/cassandra-exporter/standalone/src/main/java/org/apache/cassandra/utils/EstimatedHistogram.java
-/home/adam/Projects/cassandra-exporter/standalone/src/main/java/org/apache/cassandra/gms/FailureDetectorMBean.java
-/home/adam/Projects/cassandra-exporter/standalone/src/main/java/com/zegelin/prometheus/cassandra/Application.java
