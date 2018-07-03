@@ -3,24 +3,27 @@ package com.zegelin.prometheus.cassandra;
 import com.google.common.collect.ImmutableMap;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.jmx.ObjectNames;
+import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
 import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
 import org.apache.cassandra.service.StorageServiceMBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.management.*;
+import javax.inject.Provider;
+import javax.management.ObjectName;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-import static com.zegelin.prometheus.cassandra.Factories.MBEAN_METRIC_FAMILY_COLLECTOR_FACTORIES;
-
 public abstract class BaseHarvester implements Harvester {
     private static final Logger logger = LoggerFactory.getLogger(BaseHarvester.class);
+
+    private final List<MBeanGroupMetricFamilyCollector.Factory> collectorFactories;
 
     private final Map<String, MBeanGroupMetricFamilyCollector> mBeanCollectorsByName = Collections.synchronizedMap(new HashMap<>());
     private final Map<ObjectName, String> mBeanNameToCollectorNameMap = Collections.synchronizedMap(new HashMap<>());
@@ -35,13 +38,17 @@ public abstract class BaseHarvester implements Harvester {
 
     private final CountDownLatch requiredMBeansLatch = new CountDownLatch(requiredMBeansRegistry.size());
 
+    protected BaseHarvester(final Provider<List<MBeanGroupMetricFamilyCollector.Factory>> factoriesProvider) {
+        collectorFactories = factoriesProvider.get();
+    }
+
 
     protected void registerMBean(final Object mBean, final ObjectName name) {
         maybeRegisterRequiredMBean(mBean, name);
 
         final NamedObject<Object> namedMBean = new NamedObject<>(name, mBean);
 
-        for (final MBeanGroupMetricFamilyCollector.Factory factory : MBEAN_METRIC_FAMILY_COLLECTOR_FACTORIES) {
+        for (final MBeanGroupMetricFamilyCollector.Factory factory : collectorFactories) {
             try {
                 final MBeanGroupMetricFamilyCollector collector = factory.createCollector(namedMBean);
 
@@ -54,7 +61,7 @@ public abstract class BaseHarvester implements Harvester {
                 break;
 
             } catch (final Exception e) {
-                logger.warn("Failed to register harvester for MBean {}", name, e);
+                logger.warn("Failed to register collector for MBean {}", name, e);
             }
         }
     }
@@ -86,32 +93,32 @@ public abstract class BaseHarvester implements Harvester {
                 return e.getValue().collect();
 
             } catch (final Exception exception) {
-                logger.warn("Metrics harvester {} failed to collect. Skipping.", e.getKey(), exception);
+                logger.warn("Metrics collector {} failed to collect. Skipping.", e.getKey(), exception);
 
                 return Stream.empty();
             }
         });
     }
 
-    public Map<String, String> globalLabels() {
+    public Labels globalLabels() {
         try {
             requiredMBeansLatch.await();
 
         } catch (final InterruptedException e) {
             logger.warn("Interrupted while waiting for required MBeans to be registered.", e);
 
-            return ImmutableMap.of();
+            return new Labels(ImmutableMap.of());
         }
 
         final String hostId = storageService.getLocalHostId();
         final String endpoint = storageService.getHostIdToEndpoint().get(hostId);
 
-        return ImmutableMap.<String, String>builder()
+        return new Labels(ImmutableMap.<String, String>builder()
                 .put("cassandra_cluster_name", storageService.getClusterName())
                 .put("cassandra_host_id", hostId)
                 .put("cassandra_node", endpoint)
                 .put("cassandra_datacenter", endpointSnitchInfo.getDatacenter())
                 .put("cassandra_rack", endpointSnitchInfo.getRack())
-                .build();
+                .build());
     }
 }

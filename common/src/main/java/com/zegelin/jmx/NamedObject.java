@@ -1,6 +1,7 @@
 package com.zegelin.jmx;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.base.Preconditions;
 
 import javax.management.ObjectName;
 import java.util.function.BiFunction;
@@ -15,6 +16,9 @@ public class NamedObject<T> {
     public final T object;
 
     public NamedObject(final ObjectName name, final T object) {
+        Preconditions.checkNotNull(name);
+        Preconditions.checkNotNull(object);
+
         this.object = object;
         this.name = name;
     }

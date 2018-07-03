@@ -1,9 +1,9 @@
 package com.zegelin.prometheus.domain;
 
-import java.util.Set;
+import java.util.stream.Stream;
 
 public class CounterMetricFamily extends MetricFamily<NumericMetric> {
-    public CounterMetricFamily(final String name, final String help, final Set<NumericMetric> metrics) {
+    public CounterMetricFamily(final String name, final String help, final Stream<NumericMetric> metrics) {
         super(name, help, metrics);
     }
 

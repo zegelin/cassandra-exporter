@@ -16,8 +16,6 @@ import javax.management.ObjectName;
 import javax.management.openmbean.CompositeData;
 import javax.management.openmbean.OpenDataException;
 import java.util.Collection;
-import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class FailureDetectorMBeanMetricFamilyCollector implements MBeanGroupMetricFamilyCollector {
@@ -58,19 +56,21 @@ public class FailureDetectorMBeanMetricFamilyCollector implements MBeanGroupMetr
             @SuppressWarnings("unchecked")
             final Collection<CompositeData> endpointPhiValues = (Collection<CompositeData>) failureDetector.getPhiValues().values();
 
-            final Set<NumericMetric> phiMetrics = endpointPhiValues.stream().map(d -> new NumericMetric(
-                    new Labels(ImmutableMap.of("endpoint", ((String) d.get("Endpoint")).substring(1))),
-                    (Double) d.get("PHI"))
-            ).collect(Collectors.toSet());
+            final Stream<NumericMetric> phiMetricsStream = endpointPhiValues.stream().map(d -> {
+                final Labels labels = new Labels(ImmutableMap.of("endpoint", ((String) d.get("Endpoint")).substring(1)));
 
-            setBuilder.add(new GaugeMetricFamily("cassandra_endpoint_phi", null, phiMetrics));
+                return new NumericMetric(labels, (Double) d.get("PHI"));
+                    }
+            );
+
+            setBuilder.add(new GaugeMetricFamily("cassandra_endpoint_phi", null, phiMetricsStream));
 
         } catch (final OpenDataException e) {
             logger.warn("Unable to collect metric cassandra_endpoint_phi.", e);
         }
 
         // up/down endpoint counts
-        setBuilder.add(new GaugeMetricFamily("cassandra_endpoints", null, ImmutableSet.of(
+        setBuilder.add(new GaugeMetricFamily("cassandra_endpoints", null, Stream.of(
                 new NumericMetric(ENDPOINT_STATE_DOWN_LABELS, failureDetector.getDownEndpointCount()),
                 new NumericMetric(ENDPOINT_STATE_UP_LABELS, failureDetector.getUpEndpointCount())
         )));

@@ -3,10 +3,10 @@ package com.zegelin.prometheus.domain;
 import com.google.common.collect.ImmutableMap;
 
 import java.util.Map;
-import java.util.Set;
+import java.util.stream.Stream;
 
 public class HistogramMetricFamily extends MetricFamily<HistogramMetricFamily.Histogram> {
-    protected HistogramMetricFamily(final String name, final String help, final Set<Histogram> metrics) {
+    protected HistogramMetricFamily(final String name, final String help, final Stream<Histogram> metrics) {
         super(name, help, metrics);
     }
 

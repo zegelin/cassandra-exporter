@@ -2,7 +2,6 @@ package com.zegelin.prometheus.jaxrs.resource;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.zegelin.prometheus.cassandra.Harvester;
 import com.zegelin.prometheus.domain.*;
 import com.zegelin.prometheus.exposition.PrometheusTextFormatWriter;
@@ -21,6 +20,7 @@ import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Path("/metrics")
 public class MetricsResource {
@@ -195,7 +195,7 @@ public class MetricsResource {
     @Produces(MediaType.TEXT_PLAIN)
     public StreamingOutput textMetrics() {
         return outputStream -> {
-            final Map<String, String> globalLabels = harvester.globalLabels();
+            final Labels globalLabels = harvester.globalLabels();
 
             try (final PrometheusTextFormatWriter writer = new PrometheusTextFormatWriter(outputStream, Instant.now(), globalLabels)) {
                 final Stopwatch stopwatch = Stopwatch.createStarted();
@@ -207,7 +207,7 @@ public class MetricsResource {
                     final double collectionTimeSeconds = collectionTimeNS / (double) TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS);
 
                     final GaugeMetricFamily collectionTimeGauge = new GaugeMetricFamily("cassandra_scrape_duration_seconds", "Time taken to collect Cassandra metrics",
-                            ImmutableSet.of(new NumericMetric(new Labels(ImmutableMap.of()), collectionTimeSeconds))
+                            Stream.of(new NumericMetric(new Labels(ImmutableMap.of()), collectionTimeSeconds))
                     );
 
                     collectionTimeGauge.accept(writer);

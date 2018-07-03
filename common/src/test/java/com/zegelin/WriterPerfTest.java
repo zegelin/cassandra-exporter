@@ -33,7 +33,7 @@ public class WriterPerfTest {
 
         final Stream<MetricFamily> metricsStream = IntStream.range(0, 30).mapToObj(i -> {
 
-            final Set<SummaryMetricFamily.Summary> summaries = IntStream.range(0, 300).mapToObj(j -> {
+            final Stream<SummaryMetricFamily.Summary> summariesStream = IntStream.range(0, 300).mapToObj(j -> {
                 final Map<Quantile, Number> quantileValues = ImmutableMap.copyOf(Maps.asMap(Quantile.STANDARD_QUANTILES, q -> 28));
 
                 final Labels labels = new Labels(ImmutableMap.of(
@@ -42,9 +42,9 @@ public class WriterPerfTest {
                 ));
 
                 return new SummaryMetricFamily.Summary(labels, 56, 77, quantileValues);
-            }).collect(Collectors.toSet());
+            });
 
-            return new SummaryMetricFamily(String.format("some_summary%d", i), "some help string", summaries);
+            return new SummaryMetricFamily(String.format("some_summary%d", i), "some help string", summariesStream);
         });
 
 
@@ -53,7 +53,7 @@ public class WriterPerfTest {
         System.out.println("Ready.");
         System.in.read();
 
-        final PrometheusTextFormatWriter writer = new PrometheusTextFormatWriter(ByteStreams.nullOutputStream(), Instant.now(), ImmutableMap.of("global", "label"));
+        final PrometheusTextFormatWriter writer = new PrometheusTextFormatWriter(ByteStreams.nullOutputStream(), Instant.now(), new Labels(ImmutableMap.of("global", "label")));
 
         int iterations = 100;
 

@@ -1,7 +1,6 @@
 package com.zegelin;
 
 import javax.management.MalformedObjectNameException;
-import javax.management.ObjectName;
 
 public class NameTest {
 

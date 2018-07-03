@@ -45,6 +45,8 @@ public class MBeanServerInterceptorHarvester extends BaseHarvester {
     }
 
     public MBeanServerInterceptorHarvester() {
+        super(new FactoriesProvider(new InternalMetadataFactory()));
+
         registerMBeanServerInterceptor();
     }
 

@@ -1,15 +1,9 @@
 package com.zegelin.prometheus.cassandra;
 
 import com.zegelin.jmx.NamedObject;
-import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
 
-import javax.management.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
+import javax.management.ObjectName;
 import java.util.stream.Stream;
 
 public interface MBeanGroupMetricFamilyCollector {
@@ -49,77 +43,5 @@ public interface MBeanGroupMetricFamilyCollector {
          * @return the MBeanGroupMetricFamilyCollector for the given MBean, or null
          */
         MBeanGroupMetricFamilyCollector createCollector(final NamedObject<?> mBean);
-
-
-        /**
-         * A builder of {@see MBeanGroupMetricFamilyCollector.Factory}s
-         */
-        class Builder {
-            private final CollectorConstructor collectorConstructor;
-            private final QueryExp objectNameQuery;
-            private final String metricFamilyName;
-
-            private String help;
-
-            interface LabelMaker extends Function<Map<String, String>, Map<String, String>> {
-                @Override
-                Map<String, String> apply(Map<String, String> keyPropertyList);
-            }
-
-            private final List<LabelMaker> labelMakers = new ArrayList<>();
-
-
-            Builder(final CollectorConstructor collectorConstructor, final QueryExp objectNameQuery, final String metricFamilyName) {
-                this.collectorConstructor = collectorConstructor;
-                this.objectNameQuery = objectNameQuery;
-                this.metricFamilyName = metricFamilyName;
-            }
-
-
-            Builder withLabelMaker(final LabelMaker labelMaker) {
-                labelMakers.add(labelMaker);
-
-                return this;
-            }
-
-            Builder withHelp(final String help) {
-                this.help = help;
-
-                return this;
-            }
-
-
-            Factory build() {
-                return new Factory() {
-                    @Override
-                    public MBeanGroupMetricFamilyCollector createCollector(final NamedObject<?> mBean) {
-                        try {
-                            if (!objectNameQuery.apply(mBean.name))
-                                return null;
-                        } catch (final BadStringOperationException | BadBinaryOpValueExpException | BadAttributeValueExpException | InvalidApplicationException e) {
-                            throw new IllegalStateException("Failed to apply object name query to object name.", e);
-                        }
-
-                        final Map<String, String> keyPropertyList = mBean.name.getKeyPropertyList();
-
-                        final Map<String, String> rawLabels = new HashMap<>();
-                        {
-                            for (final LabelMaker labelMaker : labelMakers) {
-                                rawLabels.putAll(labelMaker.apply(keyPropertyList));
-                            }
-                        }
-
-                        final String name = String.format("cassandra_%s", metricFamilyName);
-
-                        return collectorConstructor.groupCollectorForMBean(name, help, new Labels(rawLabels), mBean);
-                    }
-                };
-            }
-
-            @FunctionalInterface
-            public interface CollectorConstructor {
-                MBeanGroupMetricFamilyCollector groupCollectorForMBean(final String name, final String help, final Labels labels, final NamedObject<?> mBean);
-            }
-        }
     }
 }

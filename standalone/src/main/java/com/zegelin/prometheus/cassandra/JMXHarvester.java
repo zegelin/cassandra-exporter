@@ -7,12 +7,6 @@ import org.apache.cassandra.gms.FailureDetectorMBean;
 import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.service.StorageServiceMBean;
-import org.glassfish.hk2.utilities.binding.AbstractBinder;
-import org.glassfish.jersey.jackson.JacksonFeature;
-import org.glassfish.jersey.jdkhttp.JdkHttpServerFactory;
-import org.glassfish.jersey.message.GZipEncoder;
-import org.glassfish.jersey.server.ResourceConfig;
-import org.glassfish.jersey.server.filter.EncodingFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,12 +14,7 @@ import javax.management.JMX;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectInstance;
 import javax.management.ObjectName;
-import javax.management.remote.JMXConnector;
-import javax.management.remote.JMXConnectorFactory;
-import javax.management.remote.JMXServiceURL;
-import javax.ws.rs.core.UriBuilder;
 import java.io.IOException;
-import java.net.URI;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
@@ -42,6 +31,8 @@ public class JMXHarvester extends BaseHarvester {
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 
     public JMXHarvester(final MBeanServerConnection mBeanServerConnection) {
+        super(new FactoriesProvider(new RemoteMetadataFactory()));
+
         this.mBeanServerConnection = mBeanServerConnection;
 
         // periodically scan for new/destroyed MBeans
@@ -70,6 +61,8 @@ public class JMXHarvester extends BaseHarvester {
                 for (final ObjectInstance instance : addedMBeans) {
                     final Class interfaceClass = MBEAN_INTERFACES.get(instance.getClassName());
 
+                    logger.debug("Registering MBean {}.", instance);
+
                     if (interfaceClass == null) {
                         logger.debug("Cannot register MBean {}. Unrecognised class.", instance);
                         continue;
@@ -84,7 +77,7 @@ public class JMXHarvester extends BaseHarvester {
 
             currentMBeans = mBeans;
 
-        } catch (final IOException e) {
+        } catch (final Exception e) {
             logger.error("Failed to reconcile MBeans.", e);
         }
     }

@@ -1,9 +1,9 @@
 package com.zegelin.prometheus.domain;
 
-import java.util.Set;
+import java.util.stream.Stream;
 
 public class GaugeMetricFamily extends MetricFamily<NumericMetric> {
-    public GaugeMetricFamily(final String name, final String help, final Set<NumericMetric> metrics) {
+    public GaugeMetricFamily(final String name, final String help, final Stream<NumericMetric> metrics) {
         super(name, help, metrics);
     }
 

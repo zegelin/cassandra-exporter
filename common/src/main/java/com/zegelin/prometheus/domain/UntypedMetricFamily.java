@@ -1,10 +1,10 @@
 package com.zegelin.prometheus.domain;
 
 import java.util.Objects;
-import java.util.Set;
+import java.util.stream.Stream;
 
 public class UntypedMetricFamily extends MetricFamily<UntypedMetricFamily.Untyped> {
-    public UntypedMetricFamily(final String name, final String help, final Set<Untyped> metrics) {
+    public UntypedMetricFamily(final String name, final String help, final Stream<Untyped> metrics) {
         super(name, help, metrics);
     }
 

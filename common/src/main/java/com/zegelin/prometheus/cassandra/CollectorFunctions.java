@@ -1,210 +1,176 @@
 package com.zegelin.prometheus.cassandra;
 
-import com.codahale.metrics.*;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
-import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector.Factory.Builder.CollectorConstructor;
-import com.zegelin.prometheus.cassandra.collector.dynamic.FunctionCollector;
-import com.zegelin.prometheus.cassandra.collector.dynamic.FunctionCollector.CollectorFunction;
+import com.zegelin.prometheus.cassandra.collector.dynamic.FunctionalMetricFamilyCollector.CollectorFunction;
+import com.zegelin.prometheus.cassandra.collector.dynamic.FunctionalMetricFamilyCollector.LabeledObjectGroup;
 import com.zegelin.prometheus.domain.*;
-import org.apache.cassandra.metrics.CassandraMetricsRegistry;
+import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxCounterMBean;
+import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxGaugeMBean;
+import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxMeterMBean;
 import org.apache.cassandra.utils.EstimatedHistogram;
 
-import java.util.Collection;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
-import java.util.function.LongFunction;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class CollectorFunctions {
+public final class CollectorFunctions {
+    private CollectorFunctions() {}
 
-    public static <T> CollectorConstructor asCollector(final CollectorFunction<T> fn) {
-        return ((name, help, labels, mBean) -> new FunctionCollector<>(name, help, ImmutableMap.of(labels, mBean.cast()), fn));
+    private static Stream<NumericMetric> counterMetricsStream(final LabeledObjectGroup<JmxCounterMBean> group, final Function<Number, Number> scaleFunction) {
+        return group.labeledObjects().entrySet().stream()
+                .map(e -> new Object() {
+                    final Labels labels = e.getKey();
+                    final JmxCounterMBean counter = e.getValue();
+                })
+                .map(e -> new NumericMetric(e.labels, scaleFunction.apply(e.counter.getCount())));
     }
 
     /**
-     * Collect a {@link CassandraMetricsRegistry.JmxCounterMBean} as a Prometheus counter
+     * Collect a {@link JmxCounterMBean} as a Prometheus counter
      */
-    public static CollectorFunction<CassandraMetricsRegistry.JmxCounterMBean> counterAsCounter(final LongFunction<Long> scaleFunction) {
+    public static CollectorFunction<JmxCounterMBean> counterAsCounter(final Function<Number, Number> scaleFunction) {
         return group -> {
-            final Set<NumericMetric> collect = group.labeledMBeans().entrySet().stream()
-                    .map(e -> new NumericMetric(e.getKey(), scaleFunction.apply(e.getValue().getCount())))
-                    .collect(Collectors.toSet());
+            final Stream<NumericMetric> metricStream = counterMetricsStream(group, scaleFunction);
 
-            return Stream.of(new CounterMetricFamily(group.name(), group.help(), collect));
+            return Stream.of(new CounterMetricFamily(group.name(), group.help(), metricStream));
         };
     }
 
-    public static CollectorFunction<CassandraMetricsRegistry.JmxCounterMBean> counterAsCounter() {
+    public static CollectorFunction<JmxCounterMBean> counterAsCounter() {
         return counterAsCounter(l -> l);
     }
 
 
     /**
-     * Collect a {@link CassandraMetricsRegistry.JmxCounterMBean} as a Prometheus gauge
+     * Collect a {@link JmxCounterMBean} as a Prometheus gauge
      */
-    public static CollectorFunction<CassandraMetricsRegistry.JmxCounterMBean> counterAsGauge(final LongFunction<Long> scaleFunction) {
+    public static CollectorFunction<JmxCounterMBean> counterAsGauge(final Function<Number, Number> scaleFunction) {
         return group -> {
-            final Set<NumericMetric> collect = group.labeledMBeans().entrySet().stream()
-                    .map(e -> new NumericMetric(e.getKey(), scaleFunction.apply(e.getValue().getCount())))
-                    .collect(Collectors.toSet());
+            final Stream<NumericMetric> metricStream = counterMetricsStream(group, scaleFunction);
 
-            return Stream.of(new GaugeMetricFamily(group.name(), group.help(), collect));
+            return Stream.of(new GaugeMetricFamily(group.name(), group.help(), metricStream));
         };
     }
 
-    public static CollectorFunction<CassandraMetricsRegistry.JmxCounterMBean> counterAsGauge() {
-        return counterAsGauge(l -> l);
+    public static CollectorFunction<JmxCounterMBean> counterAsGauge() {
+        return counterAsGauge(Function.identity());
     }
 
 
 
     /**
-     * Collect a {@link CassandraMetricsRegistry.JmxMeterMBean} as a Prometheus counter
+     * Collect a {@link JmxMeterMBean} as a Prometheus counter
      */
-    public static CollectorFunction<CassandraMetricsRegistry.JmxMeterMBean> meterAsCounter(final LongFunction<Long> scaleFunction) {
+    public static CollectorFunction<JmxMeterMBean> meterAsCounter(final Function<Number, Number> scaleFunction) {
         return group -> {
-            final Set<NumericMetric> collect = group.labeledMBeans().entrySet().stream()
-                    .map(entry -> new NumericMetric(entry.getKey(), scaleFunction.apply(entry.getValue().getCount())))
-                    .collect(Collectors.toSet());
+            final Stream<NumericMetric> metricStream = group.labeledObjects().entrySet().stream()
+                    .map(e -> new Object() {
+                        final Labels labels = e.getKey();
+                        final JmxMeterMBean meter = e.getValue();
+                    })
+                    .map(e -> new NumericMetric(e.labels, scaleFunction.apply(e.meter.getCount())));
 
-            return Stream.of(new CounterMetricFamily(group.name(), group.help(), collect));
+
+            return Stream.of(new CounterMetricFamily(group.name(), group.help(), metricStream));
         };
     }
 
-    public static CollectorFunction<CassandraMetricsRegistry.JmxMeterMBean> meterAsCounter() {
-        return meterAsCounter(l -> l);
+    public static CollectorFunction<JmxMeterMBean> meterAsCounter() {
+        return meterAsCounter(Function.identity());
     }
 
+
+    private static Stream<NumericMetric> numericGaugeMetricsStream(final LabeledObjectGroup<JmxGaugeMBean> group, final Function<Number, Number> scaleFunction) {
+        return group.labeledObjects().entrySet().stream()
+                .map(e -> new Object() {
+                    final Labels labels = e.getKey();
+                    final JmxGaugeMBean gauge = e.getValue();
+                })
+                .map(e -> new NumericMetric(e.labels, scaleFunction.apply((Number) e.gauge.getValue())));
+    }
 
     /**
-     * Collect a {@link CassandraMetricsRegistry.JmxGaugeMBean} with a {@link Number} value as a Prometheus gauge
+     * Collect a {@link JmxGaugeMBean} with a {@link Number} value as a Prometheus gauge
      */
-    public static CollectorFunction<CassandraMetricsRegistry.JmxGaugeMBean> numericGaugeAsGauge(final Function<Number, Number> scaleFunction) {
+    public static CollectorFunction<JmxGaugeMBean> numericGaugeAsGauge(final Function<Number, Number> scaleFunction) {
         return group -> {
-            final Collection<NumericMetric> numericMetrics = Maps.transformEntries(group.labeledMBeans(), (k, v) -> new NumericMetric(k, scaleFunction.apply((Number) v.getValue())))
-                    .values();
+            final Stream<NumericMetric> metricStream = numericGaugeMetricsStream(group, scaleFunction);
 
-            return Stream.of(new GaugeMetricFamily(group.name(), group.help(), ImmutableSet.copyOf(numericMetrics)));
+            return Stream.of(new GaugeMetricFamily(group.name(), group.help(), metricStream));
         };
     }
 
-    public static CollectorFunction<CassandraMetricsRegistry.JmxGaugeMBean> numericGaugeAsGauge() {
+    public static CollectorFunction<JmxGaugeMBean> numericGaugeAsGauge() {
         return numericGaugeAsGauge(Function.identity());
     }
 
 
     /**
-     * Collect a {@link CassandraMetricsRegistry.JmxGaugeMBean} with a {@see Number} value as a Prometheus counter
+     * Collect a {@link JmxGaugeMBean} with a {@see Number} value as a Prometheus counter
      */
-    public static CollectorFunction<CassandraMetricsRegistry.JmxGaugeMBean> numericGaugeAsCounter() {
+    public static CollectorFunction<JmxGaugeMBean> numericGaugeAsCounter(final Function<Number, Number> scaleFunction) {
         return group -> {
-            final Collection<NumericMetric> numericMetrics = Maps.transformEntries(group.labeledMBeans(), (k, v) -> new NumericMetric(k, (Number) v.getValue()))
-                    .values();
+            final Stream<NumericMetric> metricStream = numericGaugeMetricsStream(group, scaleFunction);
 
-            return Stream.of(new CounterMetricFamily(group.name(), group.help(), ImmutableSet.copyOf(numericMetrics)));
+            return Stream.of(new CounterMetricFamily(group.name(), group.help(), metricStream));
         };
     }
+
+    public static CollectorFunction<JmxGaugeMBean> numericGaugeAsCounter() {
+        return numericGaugeAsCounter(Function.identity());
+    }
+
+
 
     /**
-     * Collect a {@link CassandraMetricsRegistry.JmxGaugeMBean} with a Cassandra {@link EstimatedHistogram} value as a Prometheus summary
+     * Collect a {@link JmxGaugeMBean} with a Cassandra {@link EstimatedHistogram} value as a Prometheus summary
      */
-    public static CollectorFunction<CassandraMetricsRegistry.JmxGaugeMBean> histogramGaugeAsSummary(final Function<Number, Number> quantileScaleFunction) {
+    public static CollectorFunction<JmxGaugeMBean> histogramGaugeAsSummary(final Function<Number, Number> quantileScaleFunction) {
         return group -> {
-            final Collection<SummaryMetricFamily.Summary> summaries =  Maps.transformEntries(group.labeledMBeans(), (labels, gauge) -> {
-                final long[] bucketData = (long[]) gauge.getValue();
+            final Stream<SummaryMetricFamily.Summary> summaryStream = group.labeledObjects().entrySet().stream()
+                    .map(e -> new Object() {
+                        final Labels labels = e.getKey();
+                        final JmxGaugeMBean gauge = e.getValue();
+                    })
+                    .map(e -> {
+                        final long[] bucketData = (long[]) e.gauge.getValue();
 
-                if (bucketData.length == 0) {
-                    return new SummaryMetricFamily.Summary(labels, Double.NaN, Double.NaN, Maps.toMap(Quantile.STANDARD_QUANTILES, q -> Double.NaN));
-                }
+                        if (bucketData.length == 0) {
+                            return new SummaryMetricFamily.Summary(e.labels, Double.NaN, Double.NaN, Maps.toMap(Quantile.STANDARD_QUANTILES, q -> Double.NaN));
+                        }
 
-                final EstimatedHistogram histogram = new EstimatedHistogram(bucketData);
+                        final EstimatedHistogram histogram = new EstimatedHistogram(bucketData);
 
-                final Map<Quantile, Number> quantiles = Maps.toMap(Quantile.STANDARD_QUANTILES, q -> quantileScaleFunction.apply(histogram.percentile(q.value)));
+                        final Map<Quantile, Number> quantiles = Maps.toMap(Quantile.STANDARD_QUANTILES, q -> quantileScaleFunction.apply(histogram.percentile(q.value)));
 
-                return new SummaryMetricFamily.Summary(labels, Double.NaN, histogram.count(), quantiles);
-            }).values();
+                        return new SummaryMetricFamily.Summary(e.labels, Double.NaN, histogram.count(), quantiles);
+                    });
 
-            return Stream.of(new SummaryMetricFamily(group.name(), group.help(), ImmutableSet.copyOf(summaries)));
+            return Stream.of(new SummaryMetricFamily(group.name(), group.help(), summaryStream));
         };
     }
 
-    public static CollectorFunction<CassandraMetricsRegistry.JmxGaugeMBean> histogramGaugeAsSummary() {
+    public static CollectorFunction<JmxGaugeMBean> histogramGaugeAsSummary() {
         return histogramGaugeAsSummary(l -> l);
     }
 
-
-//    public static <X extends Sampling & Counting> Stream<MetricFamily<?>> samplingAndCountingAsSummary(final FunctionCollector.LabeledMBeanGroup<X> group) {
-//        final Collection<SummaryMetricFamily.Summary> values = Maps.transformEntries(group.labeledMBeans(), (labels, metric) -> {
-//            final long count = metric.getCount();
-//            final Snapshot snapshot = metric.getSnapshot();
-//
-//            final Map<Quantile, Number> quantiles = Maps.toMap(Quantile.STANDARD_QUANTILES, q -> snapshot.getValue(q.value));
-//
-//            return new SummaryMetricFamily.Summary(labels, Double.NaN, count, quantiles);
-//        }).values();
-//
-//        return Stream.of(new SummaryMetricFamily(group.name(), group.help(), ImmutableSet.copyOf(values)));
-//    }
-//
-//    public static Stream<MetricFamily<?>> timerAsSummary(final FunctionCollector.LabeledMBeanGroup<Timer> group) {
-//        return samplingAndCountingAsSummary(group);
-//    }
-//
-//    public static Stream<MetricFamily<?>> histogramAsSummary(final FunctionCollector.LabeledMBeanGroup<Histogram> group) {
-//        return samplingAndCountingAsSummary(group);
-//    }
-
-
-
-    public static <X extends Sampling & Counting> CollectorFunction<X> samplingAndCountingAsSummary() {
+    /**
+     * Collect a {@link SamplingCounting} as a Prometheus summary
+     */
+    protected static CollectorFunction<SamplingCounting> samplingAndCountingAsSummary(final Function<Number, Number> quantileScaleFunction) {
         return group -> {
-            final Collection<SummaryMetricFamily.Summary> values = Maps.transformEntries(group.labeledMBeans(), (labels, metric) -> {
-                final long count = metric.getCount();
-                final Snapshot snapshot = metric.getSnapshot();
+            final Stream<SummaryMetricFamily.Summary> summaryStream = group.labeledObjects().entrySet().stream()
+                    .map(e -> new Object() {
+                        final Labels labels = e.getKey();
+                        final SamplingCounting samplingCounting = e.getValue();
+                    })
+                    .map(e -> new SummaryMetricFamily.Summary(e.labels, Double.NaN, e.samplingCounting.getCount(), e.samplingCounting.getQuantiles()));
 
-                final Map<Quantile, Number> quantiles = Maps.toMap(Quantile.STANDARD_QUANTILES, q -> snapshot.getValue(q.value));
-
-                return new SummaryMetricFamily.Summary(labels, Double.NaN, count, quantiles);
-            }).values();
-
-            return Stream.of(new SummaryMetricFamily(group.name(), group.help(), ImmutableSet.copyOf(values)));
+            return Stream.of(new SummaryMetricFamily(group.name(), group.help(), summaryStream));
         };
     }
 
-
-    public static CollectorFunction<CassandraMetricsRegistry.JmxTimerMBean> timerAsSummary(final Function<Number, Number> quantileScaleFunction) {
-        return group -> {
-//            Maps.transformEntries(group.labeledMBeans(), (labels, timer) -> {
-//                return null;
-//            }).values();
-//
-//            return Stream.of(new SummaryMetricFamily(group.name(), group.help(), ImmutableSet.copyOf(values)));
-
-            return Stream.of();
-        };
-    }
-
-    public static CollectorFunction<CassandraMetricsRegistry.JmxTimerMBean> timerAsSummary() {
-        return timerAsSummary(Function.identity());
-    }
-
-
-    public static CollectorFunction<CassandraMetricsRegistry.JmxHistogramMBean> histogramAsSummary(final Function<Number, Number> quantileScaleFunction) {
-        return group -> {
-            return Stream.of();
-        };
-    }
-
-    public static CollectorFunction<CassandraMetricsRegistry.JmxHistogramMBean> histogramAsSummary() {
-        return histogramAsSummary(Function.identity());
-    }
-
-
-    public static Stream<MetricFamily<?>> histogramAsSummary(final FunctionCollector.LabeledMBeanGroup<CassandraMetricsRegistry.JmxHistogramMBean> group) {
-        return Stream.of();//samplingAndCountingAsSummary(group);
+    public static CollectorFunction<SamplingCounting> samplingAndCountingAsSummary() {
+        return samplingAndCountingAsSummary(Function.identity());
     }
 }

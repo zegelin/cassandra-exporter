@@ -3,10 +3,10 @@ package com.zegelin.prometheus.domain;
 import com.google.common.collect.ImmutableMap;
 
 import java.util.Map;
-import java.util.Set;
+import java.util.stream.Stream;
 
 public class SummaryMetricFamily extends MetricFamily<SummaryMetricFamily.Summary> {
-    public SummaryMetricFamily(final String name, final String help, final Set<Summary> metrics) {
+    public SummaryMetricFamily(final String name, final String help, final Stream<Summary> metrics) {
         super(name, help, metrics);
     }
 

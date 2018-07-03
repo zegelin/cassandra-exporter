@@ -63,8 +63,8 @@ public class GossiperMBeanMetricFamilyCollector implements MBeanGroupMetricFamil
         }
 
         return Stream.of(
-                new GaugeMetricFamily("cassandra_endpoint_generation", "Current endpoint generation number.", generationNumberMetrics),
-                new GaugeMetricFamily("cassandra_endpoint_downtime_seconds", null, downtimeMetrics)
+                new GaugeMetricFamily("cassandra_endpoint_generation", "Current endpoint generation number.", generationNumberMetrics.stream()),
+                new GaugeMetricFamily("cassandra_endpoint_downtime_seconds", null, downtimeMetrics.stream())
         );
     }
 }

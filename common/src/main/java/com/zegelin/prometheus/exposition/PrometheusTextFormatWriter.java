@@ -1,7 +1,6 @@
 package com.zegelin.prometheus.exposition;
 
 import com.google.common.base.Stopwatch;
-import com.google.common.collect.*;
 import com.google.common.escape.CharEscaper;
 import com.google.common.escape.Escaper;
 import com.google.common.io.CharStreams;
@@ -10,14 +9,15 @@ import com.zegelin.prometheus.domain.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.*;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.function.Consumer;
 
 public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisitor {
     public static final String LINE_SEPARATOR = System.lineSeparator();
     //private final BufferedWriter writer;
     private final String timestamp;
-    private final Map<String, String> globalLabels;
+    private final Labels globalLabels;
 
     private static final String BANNER = loadBanner();
     private final OutputStream stream;
@@ -31,6 +31,8 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
         void stopAndAppendStatistics(final StringBuilder stringBuilder) {
             stopwatch.stop();
 
+            stringBuilder.append("\n\n");
+            stringBuilder.append("# Thanks and come again!");
             stringBuilder.append(String.format("# Wrote %s metrics for %s metric families in %s%n", metricCount, metricFamilyCount, stopwatch.toString()));
         }
     }
@@ -45,7 +47,7 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
 
             CharStreams.copy(new InputStreamReader(bannerStream), stringBuilder);
 
-            stringBuilder.append("# prometheus-cassandra <version> <git sha>");
+            stringBuilder.append("# prometheus-cassandra <version> <git sha>\n\n");
 
             return stringBuilder.toString();
 
@@ -53,7 +55,7 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
             // that's a shame
         }
 
-        return "# prometheus-cassandra";
+        return "# prometheus-cassandra\n\n";
     }
 
     private enum MetricFamilyType {
@@ -99,50 +101,6 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
         };
     }
 
-
-    public PrometheusTextFormatWriter(final OutputStream stream, final Instant timestamp, final Map<String, String> globalLabels) {
-        this.stream = stream;
-        //this.writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
-        this.timestamp = " " + Long.toString(timestamp.toEpochMilli());
-        this.globalLabels = ImmutableMap.copyOf(globalLabels);
-
-        write(sb -> sb.append(BANNER));
-    }
-
-    final StringBuilder STRING_BUILDER = new StringBuilder(1024*1024*10);
-
-    void write(final Consumer<StringBuilder> consumer) {
-        STRING_BUILDER.setLength(0);
-        consumer.accept(STRING_BUILDER);
-
-        try {
-            stream.write(STRING_BUILDER.toString().getBytes(StandardCharsets.UTF_8));
-
-        } catch (final IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-
-    private void writeFamilyHeader(final StringBuilder stringBuilder, final MetricFamily<?> metricFamily, final MetricFamilyType type) {
-        statistics.metricFamilyCount ++;
-
-        if (metricFamily.help != null) {
-            stringBuilder.append("# HELP ")
-                    .append(metricFamily.name)
-                    .append(' ')
-                    .append(Escapers.HELP_STRING_ESCAPER.escape(metricFamily.help))
-                    .append('\n');
-        }
-
-        stringBuilder.append("# TYPE ")
-                .append(metricFamily.name)
-                .append(' ')
-                .append(type.id)
-                .append('\n');
-    }
-
-
     private static void writeLabel(final StringBuilder stringBuilder, final Map.Entry<String, String> label) {
         stringBuilder.append(label.getKey())
                 .append("=\"")
@@ -172,12 +130,57 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
         return stringBuilder.toString();
     }
 
-    private final void writeLabels(final StringBuilder stringBuilder, final Labels... labelSets) {
+
+    public PrometheusTextFormatWriter(final OutputStream stream, final Instant timestamp, final Labels globalLabels) {
+        this.stream = stream;
+        this.timestamp = " " + Long.toString(timestamp.toEpochMilli());
+        this.globalLabels = globalLabels;
+
+        write(sb -> sb.append(BANNER));
+    }
+
+    private final StringBuilder STRING_BUILDER = new StringBuilder(1024*1024*10);
+
+    private void write(final Consumer<StringBuilder> consumer) {
+        STRING_BUILDER.setLength(0);
+        consumer.accept(STRING_BUILDER);
+
+        try {
+            stream.write(STRING_BUILDER.toString().getBytes(StandardCharsets.UTF_8));
+
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private void writeFamilyHeader(final StringBuilder stringBuilder, final MetricFamily<?> metricFamily, final MetricFamilyType type) {
+        statistics.metricFamilyCount ++;
+
+        if (metricFamily.help != null) {
+            stringBuilder.append("# HELP ")
+                    .append(metricFamily.name)
+                    .append(' ')
+                    .append(Escapers.HELP_STRING_ESCAPER.escape(metricFamily.help))
+                    .append('\n');
+        }
+
+        stringBuilder.append("# TYPE ")
+                .append(metricFamily.name)
+                .append(' ')
+                .append(type.id)
+                .append('\n');
+    }
+
+    private  void writeLabels(final StringBuilder stringBuilder, final Labels... labelSets) {
         stringBuilder.append('{');
+
 
         for (int i = 0; i < labelSets.length; i++) {
             stringBuilder.append(labelSets[i].asPlainTextFormatString());
+            stringBuilder.append(',');
         }
+
+        stringBuilder.append(globalLabels.asPlainTextFormatString());
 
         stringBuilder.append('}');
     }

@@ -8,9 +8,7 @@ import org.apache.cassandra.gms.FailureDetectorMBean;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintStream;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 
 public class MetricsTest {
 

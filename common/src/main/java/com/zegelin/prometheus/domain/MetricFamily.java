@@ -5,15 +5,16 @@ import com.google.common.collect.ImmutableSet;
 
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
 
 public abstract class MetricFamily<T extends Metric> {
     public final String name, help;
     public final Set<T> metrics;
 
-    protected MetricFamily(final String name, final String help, final Set<T> metrics) {
+    protected MetricFamily(final String name, final String help, final Stream<T> metrics) {
         this.name = name;
         this.help = help;
-        this.metrics = ImmutableSet.copyOf(metrics);
+        this.metrics = ImmutableSet.copyOf(metrics.iterator());
     }
 
     public abstract <R> R accept(final MetricFamilyVisitor<R> visitor);
