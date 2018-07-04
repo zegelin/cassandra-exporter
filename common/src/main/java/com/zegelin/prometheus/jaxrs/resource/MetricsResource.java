@@ -2,6 +2,7 @@ package com.zegelin.prometheus.jaxrs.resource;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.io.CharStreams;
 import com.zegelin.prometheus.cassandra.Harvester;
 import com.zegelin.prometheus.domain.*;
 import com.zegelin.prometheus.exposition.PrometheusTextFormatWriter;
@@ -10,9 +11,7 @@ import javax.inject.Inject;
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.StreamingOutput;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintWriter;
+import java.io.*;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -47,11 +46,22 @@ public class MetricsResource {
 
                 final Map<String, String> globalLabels = harvester.globalLabels();
 
-                try (PrintWriter writer = new PrintWriter(outputStream)) {
+                try (final PrintWriter writer = new PrintWriter(outputStream)) {
                     final int[] totalMetricFamilies = {0};
                     final int[] totalMetrics = {0};
 
-                    writer.println("<link rel=\"stylesheet\" href=\"//localhost:8009/styles.css\" />");
+                    writer.println("<html><head>");
+                    writer.println("<meta charset=\"UTF-8\" />");
+
+                    writer.println("<style>");
+                    try (final InputStream bannerStream = PrometheusTextFormatWriter.class.getResourceAsStream("/styles.css")) {
+                        CharStreams.copy(new InputStreamReader(bannerStream), writer);
+                    }
+                    writer.println("</style>");
+
+                    writer.println("</head>");
+
+                    writer.println("<body>");
 
                     writer.println("<h1>Cassandra Metrics</h1>");
 
@@ -117,24 +127,24 @@ public class MetricsResource {
 
                             writer.println("<tbody>");
 
-//                                for (final T metric : metricFamily.metrics) {
-//                                    writer.printf("<tr>");
-//                                    writer.printf("<td><dl class=\"labels\">");
-//                                    for (final Map.Entry<String, String> label : metric.labels.entrySet()) {
-//                                        writer.printf("<dt>%s</dt><dd>%s</dd>", label.getKey(), label.getValue());
-//                                    }
-//                                    writer.printf("</dl></td>");
-//
-//                                    writer.printf("<td><dl class=\"values\">");
-//                                    final Map<String, Object> values = valuesFunction.apply(metric);
-//                                    for (final Map.Entry<String, Object> value : values.entrySet()) {
-//                                        writer.printf("<dt>%s</dt><dd>%s</dd>", value.getKey(), value.getValue());
-//                                    }
-//                                    writer.printf("</dl></td>");
-//                                    writer.printf("</tr>");
-//
-//                                    totalMetrics[0]+=values.size();
-//                                }
+                            for (final T metric : metricFamily.metrics) {
+                                writer.printf("<tr>");
+                                writer.printf("<td><dl class=\"labels\">");
+                                for (final Map.Entry<String, String> label : metric.labels.entrySet()) {
+                                    writer.printf("<dt>%s</dt><dd>%s</dd>", label.getKey(), label.getValue());
+                                }
+                                writer.printf("</dl></td>");
+
+                                writer.printf("<td><dl class=\"values\">");
+                                final Map<String, Object> values = valuesFunction.apply(metric);
+                                for (final Map.Entry<String, Object> value : values.entrySet()) {
+                                    writer.printf("<dt>%s</dt><dd>%s</dd>", value.getKey(), value.getValue());
+                                }
+                                writer.printf("</dl></td>");
+                                writer.printf("</tr>");
+
+                                totalMetrics[0]+=values.size();
+                            }
 
                             writer.println("</tbody>");
 
@@ -184,6 +194,8 @@ public class MetricsResource {
 
                     writer.println("<hr />");
                     writer.printf("<small>Collection time: %s, total number of metric families: %d, total number of time series: %d%n", stopwatch.toString(), totalMetricFamilies[0], totalMetrics[0]);
+
+                    writer.println("</body></html>");
 
                 }
             }

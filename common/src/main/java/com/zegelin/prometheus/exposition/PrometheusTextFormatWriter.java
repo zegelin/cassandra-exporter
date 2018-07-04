@@ -14,13 +14,13 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisitor {
-    public static final String LINE_SEPARATOR = System.lineSeparator();
-    //private final BufferedWriter writer;
     private final String timestamp;
     private final Labels globalLabels;
 
     private static final String BANNER = loadBanner();
     private final OutputStream stream;
+
+    private final StringBuilder stringBuilder = new StringBuilder(1024*1024*10);
 
     static class Statistics {
         int metricFamilyCount = 0;
@@ -32,8 +32,8 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
             stopwatch.stop();
 
             stringBuilder.append("\n\n");
-            stringBuilder.append("# Thanks and come again!");
-            stringBuilder.append(String.format("# Wrote %s metrics for %s metric families in %s%n", metricCount, metricFamilyCount, stopwatch.toString()));
+            stringBuilder.append("# Thanks and come again!\n\n");
+            stringBuilder.append(String.format("# Wrote %s metrics for %s metric families in %s\n", metricCount, metricFamilyCount, stopwatch.toString()));
         }
     }
 
@@ -47,7 +47,8 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
 
             CharStreams.copy(new InputStreamReader(bannerStream), stringBuilder);
 
-            stringBuilder.append("# prometheus-cassandra <version> <git sha>\n\n");
+            stringBuilder.append("# prometheus-cassandra <version> <git sha>"); // TODO!
+            stringBuilder.append("\n\n");
 
             return stringBuilder.toString();
 
@@ -139,14 +140,12 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
         write(sb -> sb.append(BANNER));
     }
 
-    private final StringBuilder STRING_BUILDER = new StringBuilder(1024*1024*10);
-
     private void write(final Consumer<StringBuilder> consumer) {
-        STRING_BUILDER.setLength(0);
-        consumer.accept(STRING_BUILDER);
+        stringBuilder.setLength(0);
+        consumer.accept(stringBuilder);
 
         try {
-            stream.write(STRING_BUILDER.toString().getBytes(StandardCharsets.UTF_8));
+            stream.write(stringBuilder.toString().getBytes(StandardCharsets.UTF_8));
 
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
@@ -174,18 +173,22 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
     private  void writeLabels(final StringBuilder stringBuilder, final Labels... labelSets) {
         stringBuilder.append('{');
 
-
         for (int i = 0; i < labelSets.length; i++) {
-            stringBuilder.append(labelSets[i].asPlainTextFormatString());
-            stringBuilder.append(',');
-        }
+            final Labels labels = labelSets[i];
 
-        stringBuilder.append(globalLabels.asPlainTextFormatString());
+            if (labels.isEmpty())
+                continue;
+
+            stringBuilder.append(labels.asPlainTextFormatString());
+
+            if (i != labelSets.length - 1)
+                stringBuilder.append(',');
+        }
 
         stringBuilder.append('}');
     }
 
-    private final void writeMetric(final StringBuilder stringBuilder, final String familyName, final String suffix, final float value, final Labels... labelSets) {
+    private void writeMetric(final StringBuilder stringBuilder, final String familyName, final String suffix, final float value, final Labels... labelSets) {
         statistics.metricCount ++;
 
         // family + optional suffix
@@ -201,7 +204,7 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
                 .append(value)
                 .append(timestamp);
 
-        stringBuilder.append(LINE_SEPARATOR);
+        stringBuilder.append('\n');
     }
 
     private void writeNumericFamily(final MetricFamily<NumericMetric> metricFamily, final MetricFamilyType type) {
@@ -209,7 +212,7 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
             writeFamilyHeader(stringBuilder, metricFamily, type);
 
             metricFamily.metrics.forEach(metric -> {
-                writeMetric(stringBuilder, metricFamily.name, null, metric.value.floatValue(), metric.labels);
+                writeMetric(stringBuilder, metricFamily.name, null, metric.value.floatValue(), metric.labels, globalLabels);
             });
         });
     }
@@ -240,7 +243,7 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
                 writeMetric(stringBuilder, metricFamily.name, "count", summary.count.floatValue(), summary.labels);
 
                 summary.quantiles.forEach((quantile, value) -> {
-                    writeMetric(stringBuilder, metricFamily.name, null, value.floatValue(), summary.labels, quantile.asSummaryLabels());
+                    writeMetric(stringBuilder, metricFamily.name, null, value.floatValue(), summary.labels, quantile.asSummaryLabels(), globalLabels);
                 });
             }
         });
@@ -258,7 +261,7 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
                 writeMetric(stringBuilder, metricFamily.name, "count", histogram.count.floatValue(), histogram.labels);
 
                 histogram.quantiles.forEach((quantile, value) -> {
-                    writeMetric(stringBuilder, metricFamily.name, "bucket", value.floatValue(), histogram.labels, quantile.asHistogramLabels());
+                    writeMetric(stringBuilder, metricFamily.name, "bucket", value.floatValue(), histogram.labels, quantile.asHistogramLabels(), globalLabels);
                 });
             });
         });
@@ -272,7 +275,7 @@ public class PrometheusTextFormatWriter implements Closeable, MetricFamilyVisito
             writeFamilyHeader(stringBuilder, metricFamily, MetricFamilyType.UNTYPED);
 
             metricFamily.metrics.forEach(metric -> {
-                writeMetric(stringBuilder, metricFamily.name, metric.name, metric.value.floatValue(), metric.labels);
+                writeMetric(stringBuilder, metricFamily.name, metric.name, metric.value.floatValue(), metric.labels, globalLabels);
             });
         });
 
