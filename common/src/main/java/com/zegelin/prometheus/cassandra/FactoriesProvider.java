@@ -262,7 +262,7 @@ public class FactoriesProvider implements Provider<List<Factory>> {
 
                         indexMetadata.ifPresent(m -> {
                             labelsBuilder.put("table_id", m.id().toString());
-                            labelsBuilder.put("index_type", m.kind().toString());
+                            labelsBuilder.put("index_type", m.indexType().toString());
 
                             m.customClassName().ifPresent(s -> labelsBuilder.put("index_class_name", s));
                         });
@@ -274,7 +274,7 @@ public class FactoriesProvider implements Provider<List<Factory>> {
 
                         tableMetadata.ifPresent(m -> {
                             labelsBuilder.put("table_id", m.id().toString());
-//                            labelsBuilder.put("table_type", )
+                            labelsBuilder.put("table_type", m.isView() ? "view" : "table");
                         });
                     }
 
@@ -336,14 +336,14 @@ public class FactoriesProvider implements Provider<List<Factory>> {
 
                     labels.computeIfAbsent("task_type", k -> {
                         final String name = keyPropertyList.get("name");
-                        final Pattern namePattern = Pattern.compile("(?<kind>.*)Message.*Tasks");
+                        final Pattern namePattern = Pattern.compile("(?<type>.*)Message.*Tasks");
 
                         final Matcher matcher = namePattern.matcher(name);
 
                         if (!matcher.matches())
                             return null;
 
-                        return matcher.group("kind").toLowerCase();
+                        return matcher.group("type").toLowerCase();
                     });
 
                     return labels;

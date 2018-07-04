@@ -5,13 +5,13 @@ import java.util.UUID;
 
 public interface MetadataFactory {
     interface IndexMetadata {
-        enum Kind {
+        enum IndexType {
             KEYS,
             CUSTOM,
             COMPOSITES
         }
 
-        Kind kind();
+        IndexType indexType();
 
         UUID id();
 
@@ -20,6 +20,8 @@ public interface MetadataFactory {
 
     interface TableMetadata {
         UUID id();
+
+        boolean isView();
     }
 
     Optional<IndexMetadata> indexMetadata(String keyspaceName, String tableName, String indexName);

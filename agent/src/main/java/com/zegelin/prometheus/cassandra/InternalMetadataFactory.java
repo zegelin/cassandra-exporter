@@ -17,13 +17,13 @@ public class InternalMetadataFactory implements MetadataFactory {
         return getCFMetaData(keyspaceName, tableName)
                 .flatMap(m -> m.getIndexes().get(indexName))
                 .map(m -> {
-                    final IndexMetadata.Kind kind = IndexMetadata.Kind.valueOf(m.kind.toString());
+                    final IndexMetadata.IndexType indexType = IndexMetadata.IndexType.valueOf(m.kind.toString());
                     final Optional<String> className = Optional.ofNullable(m.options.get("class_name"));
 
                     return new IndexMetadata() {
                         @Override
-                        public Kind kind() {
-                            return kind;
+                        public IndexType indexType() {
+                            return indexType;
                         }
 
                         @Override
@@ -47,6 +47,11 @@ public class InternalMetadataFactory implements MetadataFactory {
                         @Override
                         public UUID id() {
                             return m.cfId;
+                        }
+
+                        @Override
+                        public boolean isView() {
+                            return m.isView();
                         }
                     };
                 });
