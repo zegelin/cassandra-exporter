@@ -26,11 +26,11 @@ Other Cassandra and Prometheus versions will be tested for compatibility in the 
 
 ## Usage
 
-Download the latest release and copy `cassandra-exporter-<version>.jar` to `$CASSANDRA_HOME/lib` (typically `/usr/share/cassandra/lib` in most package installs).
+Download the latest release and copy `cassandra-exporter-agent-<version>.jar` to `$CASSANDRA_HOME/lib` (typically `/usr/share/cassandra/lib` in most package installs).
 
 Then edit `$CASSANDRA_CONF/cassandra-env.sh` (typically `/etc/cassandra/cassandra-env.sh`) and append the following:
 
-    JVM_OPTS="$JVM_OPTS -javaagent:$CASSANDRA_HOME/lib/prometheus-cassandra-<version>.jar=http://localhost:9998/"
+    JVM_OPTS="$JVM_OPTS -javaagent:$CASSANDRA_HOME/lib/cassandra-exporter-agent-<version>.jar=http://localhost:9998/"
 
 Then (re-)start Cassandra.
 
@@ -45,13 +45,19 @@ Configure Prometheus to scrape the endpoint by adding the following to `promethe
         static_configs:
           - targets: ['<cassandra node IP>:9998']
 
-See the Prometheus documentation for more details on configuring scrape targets.
+See the [Prometheus documentation](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#%3Cscrape_config%3E) for more details on configuring scrape targets.
 
 Viewing the exposed endpoint in a web browser will display a HTML version of the exported metrics.
 
-To view the raw, plain text metrics either request the endpoint with with a client that prefers plain text
-(or can directly specify the `Accept: text/plain` header) `?x-content-type=text/plain`
+To view the raw, plain text metrics (in the Prometheus text exposition format), either request the endpoint with a HTTP client that prefers plain text
+(or one that can specify the `Accept: text/plain` header) or add the following query parameter to the URL: `?x-content-type=text/plain`.
 
+An experimental JSON output is also provided, via `Accept: application/json` or `?x-content-type=application/json`.
+The format/structure of this output is subject to change.
+
+## Options
+
+Currently only the HTTP endpoint (address & port) can be configured.
 
 
 ## Features
@@ -72,19 +78,23 @@ Aggregate metrics, such as the aggregated table metrics at the keyspace and node
 
 Metrics are coalesced when appropriate so they share the same name, opting for *labels* to differentiate indiviual time series. For example, each table level metric has a constant name and at minimum a `table` & `keyspace` label, which allows for complex PromQL queries.
 
-For example the `cassandra_table_operation_latency_seconds[_count|__sum]` summary metric groups read, write, range read, CAS prepare, CAS propose and CAS commit latency metrics together.
-The operation type is exported as the `operation` label.
+For example the `cassandra_table_operation_latency_seconds[_count|_sum]` summary metric combines read, write, range read, CAS prepare, CAS propose and CAS commit latency metrics together into a single metric family.
+A summary exposes percentiles (via the `quantile` label), a total count of recorded samples (via the `_count` metric),
+and (if available, `NaN` otherwise) an accumulated sum of all samples  (via the `_sum` metric).
 
-    cassandra_table_operation_latency_seconds_count{keyspace="system_schema",table="tables",table_type="table",operation="read"}
-    cassandra_table_operation_latency_seconds_count{keyspace="system_schema",table="tables",table_type="table",operation="write"}
+Individual time-series are separated by different labels. In this example, the operation type is exported as the `operation` label.
+The source `keyspace`, `table`, `table_type` (table, view or index), `table_id` (CF UUID), and numerous other metadata labels are available.
 
-    cassandra_table_operation_latency_seconds_count{keyspace="system_schema",table="keyspaces",table_type="table",operation="read"}
-    cassandra_table_operation_latency_seconds_count{keyspace="system_schema",table="keyspaces",table_type="table",operation="write"}
+    cassandra_table_operation_latency_seconds_count{keyspace="system_schema",table="tables",table_type="table",operation="read",...}
+    cassandra_table_operation_latency_seconds_count{keyspace="system_schema",table="tables",table_type="table",operation="write",...}
+
+    cassandra_table_operation_latency_seconds_count{keyspace="system_schema",table="keyspaces",table_type="table",operation="read",...}
+    cassandra_table_operation_latency_seconds_count{keyspace="system_schema",table="keyspaces",table_type="table",operation="write",...}
 
 These metrics can then be queried:
 
-    sum(cassandra_table_operation_latency_seconds_count) by (keyspace, operation) # total operrations by keyspace & type
-k
+    sum(cassandra_table_operation_latency_seconds_count) by (keyspace, operation) # total operations by keyspace & type
+
 
 Element                                              | Value
 ---------------------------------------------------- |------
@@ -101,9 +111,56 @@ Element                                              | Value
 `{keyspace="system_schema",operation="range_read"}`  | 75
 `{keyspace="system_schema",operation="read"}`        | 618
 
+### Global Labels
+
+The exporter does attach global labels to the exported metrics. At this time these cannot be disabled without recompiling the agent.
+
+These labels are:
+
+- `cassandra_cluster_name`
+
+    The name of the cluster, as specified in cassandra.yaml
+    
+- `cassandra_host_id`
+
+    The unique UUID of the node
+    
+- `cassandra_node`
+
+    The IP address of the node
+    
+- `cassandra_datacenter`
+
+    The configured data center name of the node
+    
+- `cassandra_rack`
+
+    The configured rack name of the node
+    
+These labels allow aggregation of metrics at the cluster, data center and rack levels.
+
+While these labels could be defined in the prometheus scrape config, the authors feel that having these labels be automatically
+applied simplifies things, especially when Prometheus is monitoring multiple clusters across numerous DCs and racks.
+
+
+### JMX Standalone (Experimental)
+
+While it is preferable to run *cassandra-exporter* as a Java agent for performance, it can instead be run as an external application if required.
+Metrics will be queried via JMX.
+
+The set of metrics should be identical, but currently some additional metadata labels attached to the `cassandra_table_*` metrics will
+not be available.
+
+This was originally designed to assist with benchmarking and development of the exporter. Currently the JMX RMI service URL and HTTP endpoint
+values are hard-coded. The application will need to be recompiled if these parameters need to be changed.
+
+
 ## Exported Metrics
 
 See the [Exported Metrics](https://github.com/zegelin/cassandra-exporter/wiki/Exported-Metrics) wiki page for a list.
+
+We suggest viewing the metrics endpoint (e.g., <http://localhost:9998/metrics>) in a browser to get an understanding of what metrics
+are exported by your Cassandra node.
 
 ## Unstable, Missing & Future Features
 
@@ -118,6 +175,7 @@ See the [project issue tracker](https://github.com/zegelin/cassandra-exporter/is
     - listen address and port
     - exported metrics (aka, blacklist certain metrics)
     - enable/disable global labels
+    - exclude help from JSON
 
 - JVM metrics
 
@@ -125,3 +183,6 @@ See the [project issue tracker](https://github.com/zegelin/cassandra-exporter/is
 
 - Add some example queries
 - Add Grafana dashboard templates
+- Documentation improvements
+- Improve standalone JMX exporter
+    - Configuration parameters
