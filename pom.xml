@@ -26,6 +26,22 @@
         <tag>HEAD</tag>
     </scm>
 
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.zegelin.cassandra-exporter</groupId>
+                <artifactId>common</artifactId>
+
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.glassfish.hk2.external</groupId>
+                        <artifactId>javax.inject</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <build>
         <pluginManagement>
             <plugins>
