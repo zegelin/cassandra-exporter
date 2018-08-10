@@ -1,6 +1,6 @@
 # cassandra-exporter
 
-*Project Status: alpha*
+*Project Status: beta*
 
 ## Introduction
 
@@ -26,7 +26,7 @@ Other Cassandra and Prometheus versions will be tested for compatibility in the 
 
 ## Usage
 
-Download the latest release and copy `cassandra-exporter-agent-<version>.jar` to `$CASSANDRA_HOME/lib` (typically `/usr/share/cassandra/lib` in most package installs).
+Download the [latest release](https://github.com/zegelin/cassandra-exporter/releases/latest) and copy `cassandra-exporter-agent-<version>.jar` to `$CASSANDRA_HOME/lib` (typically `/usr/share/cassandra/lib` in most package installs).
 
 Then edit `$CASSANDRA_CONF/cassandra-env.sh` (typically `/etc/cassandra/cassandra-env.sh`) and append the following:
 
@@ -34,7 +34,7 @@ Then edit `$CASSANDRA_CONF/cassandra-env.sh` (typically `/etc/cassandra/cassandr
 
 Then (re-)start Cassandra.
 
-Prometheus metrics will be available at `http://localhost:9998/metrics`.
+Prometheus metrics will now be available at `http://localhost:9998/metrics`.
 
 Configure Prometheus to scrape the endpoint by adding the following to `prometheus.yml`:
 
@@ -52,8 +52,9 @@ Viewing the exposed endpoint in a web browser will display a HTML version of the
 To view the raw, plain text metrics (in the Prometheus text exposition format), either request the endpoint with a HTTP client that prefers plain text
 (or one that can specify the `Accept: text/plain` header) or add the following query parameter to the URL: `?x-content-type=text/plain`.
 
-An experimental JSON output is also provided, via `Accept: application/json` or `?x-content-type=application/json`.
-The format/structure of this output is subject to change.
+Experimental JSON output is also provided via the `Accept: application/json` header or `?x-content-type=application/json` URL parameter.
+
+The format/structure of the JSON output is subject to change.
 
 ## Options
 
@@ -146,13 +147,21 @@ applied simplifies things, especially when Prometheus is monitoring multiple clu
 ### JMX Standalone (Experimental)
 
 While it is preferable to run *cassandra-exporter* as a Java agent for performance, it can instead be run as an external application if required.
-Metrics will be queried via JMX.
 
-The set of metrics should be identical, but currently some additional metadata labels attached to the `cassandra_table_*` metrics will
-not be available.
+Download the [latest release](https://github.com/zegelin/cassandra-exporter/releases/latest) and copy `cassandra-exporter-standalone-<version>.jar`
+to a directory of your choosing and start it via `java -jar cassandra-exporter-standalone-<version>.jar`
 
-This was originally designed to assist with benchmarking and development of the exporter. Currently the JMX RMI service URL and HTTP endpoint
-values are hard-coded. The application will need to be recompiled if these parameters need to be changed.
+In this mode metrics will be queried via JMX which will incur a performance overhead.
+
+The set of metrics available should be identical.
+Currently some additional metadata labels, such as the table type (table, index, view, etc) attached to the `cassandra_table_*` metrics, are
+not available.
+
+The standalone mode was originally designed to assist with benchmarking and development of the exporter.
+Currently the JMX RMI service URL and HTTP endpoint values are hard-coded.
+The application will need to be recompiled if these parameters need to be changed.
+
+Future areas of development
 
 
 ## Exported Metrics
@@ -186,3 +195,7 @@ See the [project issue tracker](https://github.com/zegelin/cassandra-exporter/is
 - Documentation improvements
 - Improve standalone JMX exporter
     - Configuration parameters
+    - Systemd service file
+    - Package
+    
+- Packages for standard distributions (Debian, Fedora, Arch, etc) that install the JARs in the correct locations.
