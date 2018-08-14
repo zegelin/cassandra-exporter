@@ -8,11 +8,7 @@ import org.slf4j.LoggerFactory;
 import javax.management.*;
 import java.lang.management.ManagementFactory;
 
-/**
- * A {@link Harvester} that
- */
-
-public class MBeanServerInterceptorHarvester extends BaseHarvester {
+class MBeanServerInterceptorHarvester extends Harvester {
     private static final Logger logger = LoggerFactory.getLogger(MBeanServerInterceptorHarvester.class);
 
     class MBeanServerInterceptor extends DelegatingMBeanServerInterceptor {
@@ -44,8 +40,8 @@ public class MBeanServerInterceptorHarvester extends BaseHarvester {
         }
     }
 
-    public MBeanServerInterceptorHarvester() {
-        super(new FactoriesProvider(new InternalMetadataFactory()));
+    MBeanServerInterceptorHarvester() {
+        super(new FactoriesProvider(new InternalMetadataFactory()), exclusions, globalLabels);
 
         registerMBeanServerInterceptor();
     }
@@ -57,6 +53,4 @@ public class MBeanServerInterceptorHarvester extends BaseHarvester {
 
         mBeanServer.setMBeanServerInterceptor(interceptor);
     }
-
-
 }

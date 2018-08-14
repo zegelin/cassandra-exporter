@@ -14,7 +14,6 @@ import javax.management.JMX;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectInstance;
 import javax.management.ObjectName;
-import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
@@ -22,7 +21,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 
-public class JMXHarvester extends BaseHarvester {
+public class JMXHarvester extends Harvester {
     private static final Logger logger = LoggerFactory.getLogger(JMXHarvester.class);
 
     private final MBeanServerConnection mBeanServerConnection;
@@ -30,8 +29,8 @@ public class JMXHarvester extends BaseHarvester {
     @SuppressWarnings("FieldCanBeLocal")
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 
-    public JMXHarvester(final MBeanServerConnection mBeanServerConnection) {
-        super(new FactoriesProvider(new RemoteMetadataFactory()));
+    public JMXHarvester(final MBeanServerConnection mBeanServerConnection, final Set<Exclusion> exclusions, final Set<GlobalLabel> globalLabels) {
+        super(new FactoriesProvider(new RemoteMetadataFactory()), exclusions, globalLabels);
 
         this.mBeanServerConnection = mBeanServerConnection;
 
