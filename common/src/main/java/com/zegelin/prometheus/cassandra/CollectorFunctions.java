@@ -16,19 +16,19 @@ import java.util.stream.Stream;
 public final class CollectorFunctions {
     private CollectorFunctions() {}
 
-    private static Stream<NumericMetric> counterMetricsStream(final LabeledObjectGroup<JmxCounterMBean> group, final Function<Number, Number> scaleFunction) {
+    private static Stream<NumericMetric> counterMetricsStream(final LabeledObjectGroup<JmxCounterMBean> group, final Function<Float, Float> scaleFunction) {
         return group.labeledObjects().entrySet().stream()
                 .map(e -> new Object() {
                     final Labels labels = e.getKey();
                     final JmxCounterMBean counter = e.getValue();
                 })
-                .map(e -> new NumericMetric(e.labels, scaleFunction.apply(e.counter.getCount())));
+                .map(e -> new NumericMetric(e.labels, scaleFunction.apply((float) e.counter.getCount())));
     }
 
     /**
      * Collect a {@link JmxCounterMBean} as a Prometheus counter
      */
-    public static CollectorFunction<JmxCounterMBean> counterAsCounter(final Function<Number, Number> scaleFunction) {
+    public static CollectorFunction<JmxCounterMBean> counterAsCounter(final Function<Float, Float> scaleFunction) {
         return group -> {
             final Stream<NumericMetric> metricStream = counterMetricsStream(group, scaleFunction);
 
@@ -44,7 +44,7 @@ public final class CollectorFunctions {
     /**
      * Collect a {@link JmxCounterMBean} as a Prometheus gauge
      */
-    public static CollectorFunction<JmxCounterMBean> counterAsGauge(final Function<Number, Number> scaleFunction) {
+    public static CollectorFunction<JmxCounterMBean> counterAsGauge(final Function<Float, Float> scaleFunction) {
         return group -> {
             final Stream<NumericMetric> metricStream = counterMetricsStream(group, scaleFunction);
 
@@ -61,14 +61,14 @@ public final class CollectorFunctions {
     /**
      * Collect a {@link JmxMeterMBean} as a Prometheus counter
      */
-    public static CollectorFunction<JmxMeterMBean> meterAsCounter(final Function<Number, Number> scaleFunction) {
+    public static CollectorFunction<JmxMeterMBean> meterAsCounter(final Function<Float, Float> scaleFunction) {
         return group -> {
             final Stream<NumericMetric> metricStream = group.labeledObjects().entrySet().stream()
                     .map(e -> new Object() {
                         final Labels labels = e.getKey();
                         final JmxMeterMBean meter = e.getValue();
                     })
-                    .map(e -> new NumericMetric(e.labels, scaleFunction.apply(e.meter.getCount())));
+                    .map(e -> new NumericMetric(e.labels, scaleFunction.apply((float) e.meter.getCount())));
 
 
             return Stream.of(new CounterMetricFamily(group.name(), group.help(), metricStream));
@@ -80,19 +80,19 @@ public final class CollectorFunctions {
     }
 
 
-    private static Stream<NumericMetric> numericGaugeMetricsStream(final LabeledObjectGroup<JmxGaugeMBean> group, final Function<Number, Number> scaleFunction) {
+    private static Stream<NumericMetric> numericGaugeMetricsStream(final LabeledObjectGroup<JmxGaugeMBean> group, final Function<Float, Float> scaleFunction) {
         return group.labeledObjects().entrySet().stream()
                 .map(e -> new Object() {
                     final Labels labels = e.getKey();
                     final JmxGaugeMBean gauge = e.getValue();
                 })
-                .map(e -> new NumericMetric(e.labels, scaleFunction.apply((Number) e.gauge.getValue())));
+                .map(e -> new NumericMetric(e.labels, scaleFunction.apply(((Number) e.gauge.getValue()).floatValue())));
     }
 
     /**
      * Collect a {@link JmxGaugeMBean} with a {@link Number} value as a Prometheus gauge
      */
-    public static CollectorFunction<JmxGaugeMBean> numericGaugeAsGauge(final Function<Number, Number> scaleFunction) {
+    public static CollectorFunction<JmxGaugeMBean> numericGaugeAsGauge(final Function<Float, Float> scaleFunction) {
         return group -> {
             final Stream<NumericMetric> metricStream = numericGaugeMetricsStream(group, scaleFunction);
 
@@ -108,7 +108,7 @@ public final class CollectorFunctions {
     /**
      * Collect a {@link JmxGaugeMBean} with a {@see Number} value as a Prometheus counter
      */
-    public static CollectorFunction<JmxGaugeMBean> numericGaugeAsCounter(final Function<Number, Number> scaleFunction) {
+    public static CollectorFunction<JmxGaugeMBean> numericGaugeAsCounter(final Function<Float, Float> scaleFunction) {
         return group -> {
             final Stream<NumericMetric> metricStream = numericGaugeMetricsStream(group, scaleFunction);
 
@@ -125,7 +125,7 @@ public final class CollectorFunctions {
     /**
      * Collect a {@link JmxGaugeMBean} with a Cassandra {@link EstimatedHistogram} value as a Prometheus summary
      */
-    public static CollectorFunction<JmxGaugeMBean> histogramGaugeAsSummary(final Function<Number, Number> quantileScaleFunction) {
+    public static CollectorFunction<JmxGaugeMBean> histogramGaugeAsSummary(final Function<Float, Float> quantileScaleFunction) {
         return group -> {
             final Stream<SummaryMetricFamily.Summary> summaryStream = group.labeledObjects().entrySet().stream()
                     .map(e -> new Object() {
@@ -136,14 +136,14 @@ public final class CollectorFunctions {
                         final long[] bucketData = (long[]) e.gauge.getValue();
 
                         if (bucketData.length == 0) {
-                            return new SummaryMetricFamily.Summary(e.labels, Double.NaN, Double.NaN, Maps.toMap(Quantile.STANDARD_QUANTILES, q -> Double.NaN));
+                            return new SummaryMetricFamily.Summary(e.labels, Float.NaN, Float.NaN, Maps.toMap(Quantile.STANDARD_QUANTILES, q -> Float.NaN));
                         }
 
                         final EstimatedHistogram histogram = new EstimatedHistogram(bucketData);
 
-                        final Map<Quantile, Number> quantiles = Maps.toMap(Quantile.STANDARD_QUANTILES, q -> quantileScaleFunction.apply(histogram.percentile(q.value)));
+                        final Map<Quantile, Float> quantiles = Maps.toMap(Quantile.STANDARD_QUANTILES, q -> quantileScaleFunction.apply((float) histogram.percentile(q.value)));
 
-                        return new SummaryMetricFamily.Summary(e.labels, Double.NaN, histogram.count(), quantiles);
+                        return new SummaryMetricFamily.Summary(e.labels, Float.NaN, histogram.count(), quantiles);
                     });
 
             return Stream.of(new SummaryMetricFamily(group.name(), group.help(), summaryStream));
@@ -157,14 +157,18 @@ public final class CollectorFunctions {
     /**
      * Collect a {@link SamplingCounting} as a Prometheus summary
      */
-    protected static CollectorFunction<SamplingCounting> samplingAndCountingAsSummary(final Function<Number, Number> quantileScaleFunction) {
+    protected static CollectorFunction<SamplingCounting> samplingAndCountingAsSummary(final Function<Float, Float> quantileScaleFunction) {
         return group -> {
             final Stream<SummaryMetricFamily.Summary> summaryStream = group.labeledObjects().entrySet().stream()
                     .map(e -> new Object() {
                         final Labels labels = e.getKey();
                         final SamplingCounting samplingCounting = e.getValue();
                     })
-                    .map(e -> new SummaryMetricFamily.Summary(e.labels, Double.NaN, e.samplingCounting.getCount(), e.samplingCounting.getQuantiles()));
+                    .map(e -> {
+                        final Map<Quantile, Float> quantiles = Maps.transformValues(e.samplingCounting.getQuantiles(), v -> quantileScaleFunction.apply(v.floatValue()));
+
+                        return new SummaryMetricFamily.Summary(e.labels, Float.NaN, e.samplingCounting.getCount(), quantiles);
+                    });
 
             return Stream.of(new SummaryMetricFamily(group.name(), group.help(), summaryStream));
         };

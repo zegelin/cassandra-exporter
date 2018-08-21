@@ -16,10 +16,11 @@ public class SummaryMetricFamily extends MetricFamily<SummaryMetricFamily.Summar
     }
 
     public static class Summary extends Metric {
-        public final Number sum, count;
-        public final Map<Quantile, Number> quantiles;
+        public final float sum;
+        public final float count;
+        public final Map<Quantile, Float> quantiles;
 
-        public Summary(final Labels labels, final double sum, final double count, final Map<Quantile, Number> quantiles) {
+        public Summary(final Labels labels, final float sum, final float count, final Map<Quantile, Float> quantiles) {
             super(labels);
 
             this.sum = sum;

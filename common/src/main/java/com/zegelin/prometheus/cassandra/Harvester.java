@@ -10,12 +10,12 @@ import org.apache.cassandra.service.StorageServiceMBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Provider;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 public abstract class Harvester {
@@ -123,11 +123,13 @@ public abstract class Harvester {
     private final CountDownLatch requiredMBeansLatch = new CountDownLatch(requiredMBeansRegistry.size());
 
     private final Set<Exclusion> exclusions;
+    private final Set<GlobalLabel> enabledGlobalLabels;
 
 
-    protected Harvester(final Provider<List<MBeanGroupMetricFamilyCollector.Factory>> factoriesProvider, final Set<Exclusion> exclusions, final Set<GlobalLabel> globalLabels) {
-        this.collectorFactories = factoriesProvider.get();
+    protected Harvester(final Supplier<List<MBeanGroupMetricFamilyCollector.Factory>> factoriesSupplier, final Set<Exclusion> exclusions, final Set<GlobalLabel> enabledGlobalLabels) {
+        this.collectorFactories = factoriesSupplier.get();
         this.exclusions = exclusions;
+        this.enabledGlobalLabels = enabledGlobalLabels;
     }
 
 
@@ -202,7 +204,7 @@ public abstract class Harvester {
         return false;
     }
 
-    public Stream<MetricFamily> collect() {
+    public Stream<MetricFamily<?>> collect() {
         return mBeanCollectorsByName.entrySet().parallelStream().flatMap((e) -> {
             try {
                 return e.getValue().collect();
@@ -228,12 +230,35 @@ public abstract class Harvester {
         final String hostId = storageService.getLocalHostId();
         final String endpoint = storageService.getHostIdToEndpoint().get(hostId);
 
-        return new Labels(ImmutableMap.<String, String>builder()
-                .put("cassandra_cluster_name", storageService.getClusterName())
-                .put("cassandra_host_id", hostId)
-                .put("cassandra_node", endpoint)
-                .put("cassandra_datacenter", endpointSnitchInfo.getDatacenter())
-                .put("cassandra_rack", endpointSnitchInfo.getRack())
-                .build());
+        final ImmutableMap.Builder<String, String> mapBuilder = ImmutableMap.builder();
+
+        for (final GlobalLabel label : enabledGlobalLabels) {
+            switch (label) {
+                case CLUSTER_NAME:
+                    mapBuilder.put("cassandra_cluster_name", storageService.getClusterName());
+                    break;
+
+                case HOST_ID:
+                    mapBuilder.put("cassandra_host_id", hostId);
+                    break;
+
+                case NODE:
+                    mapBuilder.put("cassandra_node", endpoint);
+                    break;
+
+                case DATACENTER:
+                    mapBuilder.put("cassandra_datacenter", endpointSnitchInfo.getDatacenter());
+                    break;
+
+                case RACK:
+                    mapBuilder.put("cassandra_rack", endpointSnitchInfo.getRack());
+                    break;
+
+                default:
+                    throw new IllegalStateException();
+            }
+        }
+
+        return new Labels(mapBuilder.build());
     }
 }

@@ -1,5 +1,7 @@
 package com.zegelin.agent;
 
+import com.google.common.collect.ImmutableList;
+
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedList;
@@ -15,8 +17,12 @@ public final class AgentArgumentParser {
     }
 
     public static List<String> parseArguments(final String argumentsString) {
+        if (argumentsString == null) {
+            return ImmutableList.of();
+        }
+
         final Deque<State> stateStack = new LinkedList<>();
-        final List<String> arguments = new ArrayList<>();
+        final ImmutableList.Builder<String> arguments = ImmutableList.builder();
         final StringBuilder currentArgument = new StringBuilder();
 
         stateStack.push(State.ARGUMENT);
@@ -28,7 +34,7 @@ public final class AgentArgumentParser {
 
             switch (stateStack.peek()) {
                 case ARGUMENT:
-                    if (c == ' ' || c == '\0') {
+                    if (c == ' ' || c == ',' || c == '\0') {
                         if (currentArgument.length() > 0) {
                             arguments.add(currentArgument.toString());
                         }
@@ -75,6 +81,6 @@ public final class AgentArgumentParser {
             throw new IllegalStateException(String.format("Argument %s is invalid.", currentArgument));
         }
 
-        return arguments;
+        return arguments.build();
     }
 }

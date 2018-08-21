@@ -4,7 +4,7 @@
 
 ## Introduction
 
-*cassandra-exporter* is a Java agent that exports Cassandra metrics to [Prometheus](http://prometheus.io).
+*cassandra-exporter* is a Java agent (with optional standalone mode) that exports Cassandra metrics to [Prometheus](http://prometheus.io).
 
 It enables high performance collection of Cassandra metrics and follows the Prometheus best practices for metrics naming and labeling.
 
@@ -26,15 +26,39 @@ Other Cassandra and Prometheus versions will be tested for compatibility in the 
 
 ## Usage
 
+### Agent
+
 Download the [latest release](https://github.com/zegelin/cassandra-exporter/releases/latest) and copy `cassandra-exporter-agent-<version>.jar` to `$CASSANDRA_HOME/lib` (typically `/usr/share/cassandra/lib` in most package installs).
 
 Then edit `$CASSANDRA_CONF/cassandra-env.sh` (typically `/etc/cassandra/cassandra-env.sh`) and append the following:
 
-    JVM_OPTS="$JVM_OPTS -javaagent:$CASSANDRA_HOME/lib/cassandra-exporter-agent-<version>.jar=http://localhost:9998/"
+    JVM_OPTS="$JVM_OPTS -javaagent:$CASSANDRA_HOME/lib/cassandra-exporter-agent-<version>.jar"
 
 Then (re-)start Cassandra.
 
-Prometheus metrics will now be available at `http://localhost:9998/metrics`.
+Prometheus metrics will now be available at <http://localhost:9500/metrics>.
+
+
+### Standalone
+
+While it is preferable to run *cassandra-exporter* as a Java agent for performance, it can instead be run as an external application if required.
+
+Download the [latest release](https://github.com/zegelin/cassandra-exporter/releases/latest) and copy `cassandra-exporter-standalone-<version>.jar` to a location of your choosing.
+
+The exporter can be started via `java -jar /path/to/cassandra-exporter-standalone-<version>.jar`.
+
+Prometheus metrics will now be available at <http://localhost:9500/metrics>.
+
+In this mode metrics will be queried via JMX which will incur a performance overhead.
+The standalone mode was originally designed to assist with benchmarking and development of the exporter.
+
+The set of metrics available should be identical to that of the agent.
+
+Currently some additional metadata labels, such as the table type (table, index, view, etc) attached to the `cassandra_table_*` metrics, are
+not available.
+
+
+### Prometheus Configuration
 
 Configure Prometheus to scrape the endpoint by adding the following to `prometheus.yml`:
 
@@ -43,22 +67,98 @@ Configure Prometheus to scrape the endpoint by adding the following to `promethe
       
       - job_name: 'cassandra'
         static_configs:
-          - targets: ['<cassandra node IP>:9998']
+          - targets: ['<cassandra node IP>:9500']
 
 See the [Prometheus documentation](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#%3Cscrape_config%3E) for more details on configuring scrape targets.
 
-Viewing the exposed endpoint in a web browser will display a HTML version of the exported metrics.
+To view the raw, plain text metrics (in the Prometheus text exposition format), request the endpoint with a HTTP client such as a browser or cURL.
 
-To view the raw, plain text metrics (in the Prometheus text exposition format), either request the endpoint with a HTTP client that prefers plain text
-(or one that can specify the `Accept: text/plain` header) or add the following query parameter to the URL: `?x-content-type=text/plain`.
-
-Experimental JSON output is also provided via the `Accept: application/json` header or `?x-content-type=application/json` URL parameter.
-
+Experimental JSON output is also provided if the `Accept: application/json` header or `?x-accept=application/json` URL parameter is specified.
 The format/structure of the JSON output is subject to change.
 
-## Options
 
-Currently only the HTTP endpoint (address & port) can be configured.
+### Options
+
+The available command line options may be seen by passing `-h`/`--help`:
+
+    Usage: <main class> [-hV] [--no-global-labels] [--family-help=VALUE]
+                        [--jmx-service-url=URL] [-g=LABEL[,LABEL...]]... [-l=
+                        [ADDRESS][:PORT]]... [-e=EXCLUSION...]...
+          --family-help=VALUE   Include or exclude metric family help in the exposition
+                                  format. AUTOMATIC excludes help strings when the user
+                                  agent is Prometheus and includes them for all other
+                                  clients (cURL, browsers, etc). Currently Prometheus
+                                  discards help strings. Excluding help strings saves
+                                  bandwidth. Can be overridden with the "?
+                                  help=true|false" URI query parameter. Valid values:
+                                  INCLUDE, EXCLUDE, AUTOMATIC. Defaults to AUTOMATIC.
+          --jmx-service-url=URL The JMX service URL of the Cassandra instance to connect
+                                  to and collect metrics. Defaults to 'service:jmx:rmi:
+                                  ///jndi/rmi://localhost:7199/jmxrmi'
+          --no-global-labels    Disable all global labels.
+      -e, --exclude=EXCLUSION...
+                                Exclude a metric family or MBean from exposition.
+                                  EXCLUSION may be the full name of a metric family
+                                  (wildcards or patterns not allowed) or the ObjectName
+                                  of a MBean or a ObjectName pattern that matches
+                                  multiple MBeans. ObjectNames always contain a colon
+                                  (':'). See the ObjectName JavaDoc for details. If
+                                  EXCLUSION is prefixed with an '@', it is interpreted
+                                  (sans @ character) as a path to a file containing
+                                  multiple EXCLUSION values, one per line. Lines
+                                  prefixed with '#' are considered comments and are
+                                  ignored. This option may be specified more than once
+                                  to define multiple exclusions.
+      -g, --global-labels=LABEL[,LABEL...]
+                                Select which global labels to include on all exported
+                                  metrics. Valid options are: 'cluster_name', 'host_id'
+                                  (UUID of the node), 'node' (node endpoint IP address),
+                                  'datacenter', 'rack'. The default is to include all
+                                  global labels. To disable all global labels use
+                                  --no-global-labels.
+      -h, --help                Show this help message and exit.
+      -l, --listen=[ADDRESS][:PORT]
+                                Listen address (and optional port). ADDRESS may be a
+                                  hostname, IPv4 dotted or decimal address, or IPv6
+                                  address. When ADDRESS is omitted, 0.0.0.0 (wildcard)
+                                  is substituted. PORT, when specified, must be a valid
+                                  port number. The default port 7890 will be substituted
+                                  if omitted. If ADDRESS is omitted but PORT is
+                                  specified, PORT must be prefixed with a colon (':'),
+                                  or PORT will be interpreted as a decimal IPv4 address.
+                                  This option may be specified more than once to listen
+                                  on multiple addresses. Defaults to '0.0.0.0:7890'
+      -V, --version             Print version information and exit.
+
+
+Note that `--jmx-service-url` is only applicable to the standalone version -- the agent does not use JMX.
+
+When run as an agent, command line options must be provided as part of the `-javaagent` flag, with an equals sign (`=`) separating the JAR path and the agent options.
+Multiple options, or option arguments can be separated by commas (`,`) or spaces. Commas are preferred as the whitespace quoting rules of `cassandra-env.sh` are quite complex.
+Options with values containing whitespace must be quoted appropriately.
+
+For example, to change the agent listening port to 1234 and exclude some metrics:
+
+    JVM_OPTS="$JVM_OPTS -javaagent:$CASSANDRA_HOME/lib/cassandra-exporter-agent-<version>.jar=--listen=:1234,--exclude=@$CASSANDRA_CONF/prometheus-exclusions"
+
+### Endpoints
+
+- `/`
+    
+    Root document with links for convenience.
+    
+    *Content-type*: `text/html`
+    
+- `/metrics`
+
+    Metrics exposition.
+    
+    *Content-type*: `text/plain;version=0.0.4`, `text/plain`, `application/json`
+    
+    *URI parameters*:
+    
+    - `x-accept=<mime>` -- override `Accept` header for browsers (e.g, `?x-accept=application/json` will force JSON output)
+    - `help=true|false` -- include/exclude per-metric family help in the output. Overrides `--family-help` CLI option. See above for more details.
 
 
 ## Features
@@ -70,6 +170,7 @@ On a 300-ish table Cassandra node, trying to collect all exposed metrics via JVM
 For exporters that run as a separate process there is additional overhead of inter-process communications and that time can reach the 10's of seconds.
 
 *cassandra-exporter* on the same node collects all metrics in 10-20 *milliseconds*.
+
 
 ### Best practices
 
@@ -112,9 +213,11 @@ Element                                              | Value
 `{keyspace="system_schema",operation="range_read"}`  | 75
 `{keyspace="system_schema",operation="read"}`        | 618
 
+
 ### Global Labels
 
-The exporter does attach global labels to the exported metrics. At this time these cannot be disabled without recompiling the agent.
+The exporter does attach global labels to the exported metrics.
+These may be configured with the `--global-labels` CLI option.
 
 These labels are:
 
@@ -140,51 +243,28 @@ These labels are:
     
 These labels allow aggregation of metrics at the cluster, data center and rack levels.
 
-While these labels could be defined in the prometheus scrape config, the authors feel that having these labels be automatically
+While these labels could be defined in the prometheus scrape config, we feel that having these labels be automatically
 applied simplifies things, especially when Prometheus is monitoring multiple clusters across numerous DCs and racks.
-
-
-### JMX Standalone (Experimental)
-
-While it is preferable to run *cassandra-exporter* as a Java agent for performance, it can instead be run as an external application if required.
-
-Download the [latest release](https://github.com/zegelin/cassandra-exporter/releases/latest) and copy `cassandra-exporter-standalone-<version>.jar`
-to a directory of your choosing and start it via `java -jar cassandra-exporter-standalone-<version>.jar`
-
-In this mode metrics will be queried via JMX which will incur a performance overhead.
-
-The set of metrics available should be identical.
-Currently some additional metadata labels, such as the table type (table, index, view, etc) attached to the `cassandra_table_*` metrics, are
-not available.
-
-The standalone mode was originally designed to assist with benchmarking and development of the exporter.
-Currently the JMX RMI service URL and HTTP endpoint values are hard-coded.
-The application will need to be recompiled if these parameters need to be changed.
-
-Future areas of development
 
 
 ## Exported Metrics
 
 See the [Exported Metrics](https://github.com/zegelin/cassandra-exporter/wiki/Exported-Metrics) wiki page for a list.
 
-We suggest viewing the metrics endpoint (e.g., <http://localhost:9998/metrics>) in a browser to get an understanding of what metrics
+We suggest viewing the metrics endpoint (e.g., <http://localhost:9500/metrics>) in a browser to get an understanding of what metrics
 are exported by your Cassandra node.
+
 
 ## Unstable, Missing & Future Features
 
 See the [project issue tracker](https://github.com/zegelin/cassandra-exporter/issues) for a complete list.
 
-- Configuration parameters
+- Embedded HTML metrics viewer
 
-    Currently only the listen address & port can be configured.
-
-    Allow configuration of:
-
-    - listen address and port
-    - exported metrics (aka, blacklist certain metrics)
-    - enable/disable global labels
-    - exclude help from JSON
+    Early versions supported outputting metrics as a HTML document for easier viewing in a browser.
+    
+    The format writer was complicated and we didn't want to add dependencies on a templating library (e.g. Freemarker) to make it simpler.
+    Instead the JSON format writer has been improved and optimized with the intent that the data could be consumed by simple static Javascript webapp. 
 
 - JVM metrics
 
@@ -194,7 +274,7 @@ See the [project issue tracker](https://github.com/zegelin/cassandra-exporter/is
 - Add Grafana dashboard templates
 - Documentation improvements
 - Improve standalone JMX exporter
-    - Configuration parameters
+    - Metadata support
     - Systemd service file
     - Package
     

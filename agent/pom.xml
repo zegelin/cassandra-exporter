@@ -4,7 +4,7 @@
     <parent>
         <groupId>com.zegelin.cassandra-exporter</groupId>
         <artifactId>exporter-parent</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>0.9.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>agent</artifactId>
@@ -16,7 +16,7 @@
         <dependency>
             <groupId>com.zegelin.cassandra-exporter</groupId>
             <artifactId>common</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <version>0.9.0-SNAPSHOT</version>
         </dependency>
 
         <dependency>

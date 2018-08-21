@@ -59,7 +59,7 @@ public class GossiperMBeanMetricFamilyCollector implements MBeanGroupMetricFamil
             final Labels labels = new Labels(ImmutableMap.of("endpoint", InetAddresses.toAddrString(endpoint)));
 
             generationNumberMetrics.add(new NumericMetric(labels, gossiper.getCurrentGenerationNumber(endpoint)));
-            downtimeMetrics.add(new NumericMetric(labels, gossiper.getEndpointDowntime(endpoint) / (double) NS_PER_S));
+            downtimeMetrics.add(new NumericMetric(labels, gossiper.getEndpointDowntime(endpoint) / (float) NS_PER_S));
         }
 
         return Stream.of(

@@ -16,16 +16,17 @@ public class HistogramMetricFamily extends MetricFamily<HistogramMetricFamily.Hi
     }
 
     public static class Histogram extends Metric {
-        public final Number sum, count;
-        public final Map<Quantile, Number> quantiles;
+        public final float sum;
+        public final float count;
+        public final Map<Quantile, Float> buckets;
 
-        public Histogram(final Labels labels, final Number sum, final Number count, final Map<Quantile, Number> quantiles) {
+        public Histogram(final Labels labels, final float sum, final float count, final Map<Quantile, Float> buckets) {
             super(labels);
 
             this.sum = sum;
             this.count = count;
-            this.quantiles = ImmutableMap.<Quantile, Number>builder()
-                    .putAll(quantiles)
+            this.buckets = ImmutableMap.<Quantile, Float>builder()
+                    .putAll(buckets)
                     .put(Quantile.POSITIVE_INFINITY, count)
                     .build();
         }

@@ -59,9 +59,8 @@ public class FailureDetectorMBeanMetricFamilyCollector implements MBeanGroupMetr
             final Stream<NumericMetric> phiMetricsStream = endpointPhiValues.stream().map(d -> {
                 final Labels labels = new Labels(ImmutableMap.of("endpoint", ((String) d.get("Endpoint")).substring(1)));
 
-                return new NumericMetric(labels, (Double) d.get("PHI"));
-                    }
-            );
+                return new NumericMetric(labels, (Float) d.get("PHI"));
+            });
 
             setBuilder.add(new GaugeMetricFamily("cassandra_endpoint_phi", null, phiMetricsStream));
 

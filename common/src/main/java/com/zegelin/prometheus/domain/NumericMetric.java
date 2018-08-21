@@ -1,9 +1,9 @@
 package com.zegelin.prometheus.domain;
 
 public class NumericMetric extends Metric {
-    public final Number value;
+    public final float value;
 
-    public NumericMetric(final Labels labels, final Number value) {
+    public NumericMetric(final Labels labels, final float value) {
         super(labels);
         this.value = value;
     }

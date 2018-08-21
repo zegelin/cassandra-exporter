@@ -64,14 +64,14 @@ public class CassandraMetricsUtilities {
             }
 
             @Override
-            public Map<Quantile, Number> getQuantiles() {
-                return  ImmutableMap.<Quantile, Number>builder()
-                        .put(Quantile.Q_50, timer.get50thPercentile())
-                        .put(Quantile.Q_75, timer.get75thPercentile())
-                        .put(Quantile.Q_95, timer.get95thPercentile())
-                        .put(Quantile.Q_98, timer.get98thPercentile())
-                        .put(Quantile.Q_99, timer.get99thPercentile())
-                        .put(Quantile.Q_999, timer.get999thPercentile())
+            public Map<Quantile, Float> getQuantiles() {
+                return  ImmutableMap.<Quantile, Float>builder()
+                        .put(Quantile.Q_50, (float) timer.get50thPercentile())
+                        .put(Quantile.Q_75, (float) timer.get75thPercentile())
+                        .put(Quantile.Q_95, (float) timer.get95thPercentile())
+                        .put(Quantile.Q_98, (float) timer.get98thPercentile())
+                        .put(Quantile.Q_99, (float) timer.get99thPercentile())
+                        .put(Quantile.Q_999, (float) timer.get999thPercentile())
                         .build();
             }
         };
@@ -85,14 +85,14 @@ public class CassandraMetricsUtilities {
             }
 
             @Override
-            public Map<Quantile, Number> getQuantiles() {
-                return  ImmutableMap.<Quantile, Number>builder()
-                        .put(Quantile.Q_50, histogram.get50thPercentile())
-                        .put(Quantile.Q_75, histogram.get75thPercentile())
-                        .put(Quantile.Q_95, histogram.get95thPercentile())
-                        .put(Quantile.Q_98, histogram.get98thPercentile())
-                        .put(Quantile.Q_99, histogram.get99thPercentile())
-                        .put(Quantile.Q_999, histogram.get999thPercentile())
+            public Map<Quantile, Float> getQuantiles() {
+                return  ImmutableMap.<Quantile, Float>builder()
+                        .put(Quantile.Q_50, (float) histogram.get50thPercentile())
+                        .put(Quantile.Q_75, (float) histogram.get75thPercentile())
+                        .put(Quantile.Q_95, (float) histogram.get95thPercentile())
+                        .put(Quantile.Q_98, (float) histogram.get98thPercentile())
+                        .put(Quantile.Q_99, (float) histogram.get99thPercentile())
+                        .put(Quantile.Q_999, (float) histogram.get999thPercentile())
                         .build();
             }
         };
@@ -106,10 +106,10 @@ public class CassandraMetricsUtilities {
             }
 
             @Override
-            public Map<Quantile, Number> getQuantiles() {
+            public Map<Quantile, Float> getQuantiles() {
                 final Snapshot snapshot = metric.getSnapshot();
 
-                return Maps.toMap(Quantile.STANDARD_QUANTILES, q -> snapshot.getValue(q.value));
+                return Maps.toMap(Quantile.STANDARD_QUANTILES, q -> (float) snapshot.getValue(q.value));
             }
         };
     }

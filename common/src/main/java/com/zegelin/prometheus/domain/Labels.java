@@ -2,7 +2,7 @@ package com.zegelin.prometheus.domain;
 
 import com.google.common.collect.ForwardingMap;
 import com.google.common.collect.ImmutableMap;
-import com.zegelin.prometheus.exposition.PrometheusTextFormatWriter;
+import com.zegelin.prometheus.exposition.JsonFormatChunkedInput;
 import com.zegelin.prometheus.exposition.TextFormatChunkedInput;
 import io.netty.buffer.ByteBuf;
 
@@ -10,13 +10,12 @@ import java.util.Map;
 
 public final class Labels extends ForwardingMap<String, String> {
     private final ImmutableMap<String, String> labels;
-    private final String plainTextRepr;
-    private final ByteBuf encodedPlaintextFormat;
+    private final ByteBuf plainTextFormatUTF8EncodedByteBuf, jsonFormatUTF8EncodedByteBuf;
 
     public Labels(final Map<String, String> labels) {
         this.labels = ImmutableMap.copyOf(labels);
-        this.plainTextRepr = PrometheusTextFormatWriter.formatLabels(labels);
-        this.encodedPlaintextFormat = TextFormatChunkedInput.formatLabels(labels);
+        this.plainTextFormatUTF8EncodedByteBuf = TextFormatChunkedInput.formatLabels(labels);
+        this.jsonFormatUTF8EncodedByteBuf = JsonFormatChunkedInput.formatLabels(labels);
     }
 
     @Override
@@ -24,17 +23,19 @@ public final class Labels extends ForwardingMap<String, String> {
         return labels;
     }
 
-    public String asPlainTextFormatString() {
-        return this.plainTextRepr;
-    }
 
     public ByteBuf asPlainTextFormatUTF8EncodedByteBuf() {
-        return encodedPlaintextFormat;
+        return plainTextFormatUTF8EncodedByteBuf;
+    }
+
+    public ByteBuf asJSONFormatUTF8EncodedByteBuf() {
+        return jsonFormatUTF8EncodedByteBuf;
     }
 
     @Override
     protected void finalize() throws Throwable {
-        this.encodedPlaintextFormat.release();
+        this.plainTextFormatUTF8EncodedByteBuf.release();
+        this.jsonFormatUTF8EncodedByteBuf.release();
 
         super.finalize();
     }

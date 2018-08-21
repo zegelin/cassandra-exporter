@@ -1,49 +1,27 @@
 package com.zegelin.prometheus.exposition;
 
-import com.google.common.collect.ForwardingIterator;
-import com.google.common.collect.Iterators;
-import com.google.common.escape.CharEscaper;
+import com.google.common.base.Stopwatch;
+import com.google.common.escape.CharEscaperBuilder;
 import com.google.common.escape.Escaper;
+import com.zegelin.netty.Resources;
 import com.zegelin.prometheus.domain.*;
+import com.zegelin.prometheus.netty.HttpHandler;
 import io.netty.buffer.*;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.DefaultHttpContent;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.stream.ChunkedInput;
-import io.netty.util.internal.PlatformDependent;
 
-import java.io.Closeable;
-import java.io.IOException;
 import java.time.Instant;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Stream;
 
 public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
-    // A UnpooledByteBufAllocator that returns ByteBufs that don't participate in leak detection and instead
-    // depend on the GC to release them. Used for constant and/or long-lived ByteBufs.
-    private static final UnpooledByteBufAllocator GC_UNPOOLED = new UnpooledByteBufAllocator(PlatformDependent.directBufferPreferred(), true);
-
-    private static ByteBuf constantUtf8Buffer(final CharSequence seq) {
-        return Unpooled.unmodifiableBuffer(
-                Unpooled.unreleasableBuffer(
-                        ByteBufUtil.writeUtf8(GC_UNPOOLED, seq)
-                )
-        );
-    }
-
-    private static final ByteBuf COMMA = constantUtf8Buffer(",");
-    private static final ByteBuf LEFT_BRACE = constantUtf8Buffer("{");
-    private static final ByteBuf RIGHT_BRACE = constantUtf8Buffer("}");
-    private static final ByteBuf SPACE = constantUtf8Buffer(" ");
-    private static final ByteBuf NEW_LINE = constantUtf8Buffer("\n");
-    private static final ByteBuf FAMILY_HEADER_HELP = constantUtf8Buffer("# HELP ");
-    private static final ByteBuf FAMILY_HEADER_TYPE = constantUtf8Buffer("# TYPE ");
-    private static final ByteBuf SUFFIX_SUM = constantUtf8Buffer("_sum");
-    private static final ByteBuf SUFFIX_COUNT = constantUtf8Buffer("_count");
-    private static final ByteBuf SUFFIX_BUCKET = constantUtf8Buffer("_bucket");
-
-    enum State {
+    private enum State {
         BANNER,
         METRIC_FAMILY,
         METRIC,
@@ -58,54 +36,50 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
         SUMMARY,
         UNTYPED;
 
-        public final ByteBuf utf8Encoded;
+        private final String encoded;
 
         MetricFamilyType() {
-            utf8Encoded = constantUtf8Buffer(this.name().toLowerCase());
+            encoded = this.name().toLowerCase();
+        }
+
+        void write(final ByteBuf buffer) {
+            ByteBufUtil.writeAscii(buffer, encoded);
         }
     }
 
-    private static class Escapers {
-        private static char[] ESCAPED_SLASH = new char[]{'\\', '\\'};
-        private static char[] ESCAPED_NEW_LINE = new char[]{'\\', 'n'};
-        private static char[] ESCAPED_DOUBLE_QUOTE = new char[]{'\\', '"'};
+    private static Escaper HELP_STRING_ESCAPER = new CharEscaperBuilder()
+            .addEscape('\\', "\\\\")
+            .addEscape('\n', "\\n")
+            .toEscaper();
 
-        private static Escaper HELP_STRING_ESCAPER = new CharEscaper() {
-            @Override
-            protected char[] escape(final char c) {
-                switch (c) {
-                    case '\\': return ESCAPED_SLASH;
-                    case '\n': return ESCAPED_NEW_LINE;
-                    default: return null;
-                }
-            }
-        };
+    private static Escaper LABEL_VALUE_ESCAPER = new CharEscaperBuilder()
+            .addEscape('\\', "\\\\")
+            .addEscape('\n', "\\n")
+            .addEscape('"', "\\\"")
+            .toEscaper();
 
-        private static Escaper LABEL_VALUE_ESCAPER = new CharEscaper() {
-            @Override
-            protected char[] escape(final char c) {
-                switch (c) {
-                    case '\\': return ESCAPED_SLASH;
-                    case '\n': return ESCAPED_NEW_LINE;
-                    case '"': return ESCAPED_DOUBLE_QUOTE;
-                    default: return null;
-                }
-            }
-        };
-    }
+    private static final ByteBuf BANNER = Resources.asByteBuf(TextFormatChunkedInput.class, "banner.txt");
 
     private final Iterator<MetricFamily<?>> metricFamilyIterator;
 
-    private final ByteBuf timestamp;
+    private final String timestamp;
     private final Labels globalLabels;
+    private final boolean includeHelp;
 
     private State state = State.BANNER;
-    private FooBar fooBar;
+    private MetricFamilyWriter metricFamilyWriter;
 
-    public TextFormatChunkedInput(final Iterable<MetricFamily<?>> metricFamilies, final Instant timestamp, final Labels globalLabels) {
+    private int metricFamilyCount = 0;
+    private int metricCount = 0;
+
+    private final Stopwatch stopwatch = Stopwatch.createUnstarted();
+
+
+    public TextFormatChunkedInput(final Stream<MetricFamily<?>> metricFamilies, final Instant timestamp, final Labels globalLabels, final boolean includeHelp) {
         this.metricFamilyIterator = metricFamilies.iterator();
-        this.timestamp = Unpooled.unmodifiableBuffer(ByteBufUtil.writeUtf8(UnpooledByteBufAllocator.DEFAULT, " " + Long.toString(timestamp.toEpochMilli())));
+        this.timestamp = " " + Long.toString(timestamp.toEpochMilli());
         this.globalLabels = globalLabels;
+        this.includeHelp = includeHelp;
     }
 
     @Override
@@ -114,261 +88,267 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
     }
 
     @Override
-    public void close() throws Exception {
-        if (this.timestamp.refCnt() > 0) {
-            this.timestamp.release();
-        }
+    public void close() throws Exception {}
 
-        // TODO: can be null
-        this.fooBar.close();
 
-        return;
-    }
+    public static ByteBuf formatLabels(final Map<String, String> labels) {
+        final StringBuilder stringBuilder = new StringBuilder();
 
-    private static void writeLabel(final StringBuilder stringBuilder, final Map.Entry<String, String> label) {
-        stringBuilder.append(label.getKey())
-                .append("=\"")
-                .append(Escapers.LABEL_VALUE_ESCAPER.escape(label.getValue()))
-                .append('"');
-    }
-
-    private static void writeLabels(final StringBuilder stringBuilder, final Map<String, String> labels) {
         if (labels.isEmpty())
-            return;
+            return Unpooled.EMPTY_BUFFER;
 
         final Iterator<Map.Entry<String, String>> labelsIterator = labels.entrySet().iterator();
 
         while (labelsIterator.hasNext()) {
-            writeLabel(stringBuilder, labelsIterator.next());
+            final Map.Entry<String, String> label = labelsIterator.next();
+
+            stringBuilder.append(label.getKey())
+                    .append("=\"")
+                    .append(LABEL_VALUE_ESCAPER.escape(label.getValue()))
+                    .append('"');
 
             if (labelsIterator.hasNext()) {
                 stringBuilder.append(',');
             }
         }
-    }
 
-    public static ByteBuf formatLabels(final Map<String, String> labels) {
-        final StringBuilder stringBuilder = new StringBuilder();
-
-        writeLabels(stringBuilder, labels);
-
-        return constantUtf8Buffer(stringBuilder);
+        return ByteBufUtil.writeUtf8(ByteBufAllocator.DEFAULT, stringBuilder);
     }
 
 
-    class FooBar extends ForwardingIterator<ByteBuf> implements MetricFamilyVisitor<ByteBuf>, Closeable {
-        private final ChannelHandlerContext ctx;
+    class MetricFamilyWriter {
+        private final Consumer<ByteBuf> headerWriter;
+        private final Function<ByteBuf, Boolean> metricWriter;
 
-        private ByteBuf encodedFamilyName;
-        private Iterator<ByteBuf> metricIterator;
+        class HeaderVisitor implements MetricFamilyVisitor<Consumer<ByteBuf>> {
+            private void writeFamilyHeader(final MetricFamily<?> metricFamily, final ByteBuf buffer, final MetricFamilyType type) {
+                buffer.writeByte('\n');
 
-        FooBar(final ChannelHandlerContext ctx) {
-            this.ctx = ctx;
-        }
+                // # HELP <family name> <help>\n
+                if (includeHelp && metricFamily.help != null) {
+                    ByteBufUtil.writeAscii(buffer, "# HELP ");
+                    ByteBufUtil.writeAscii(buffer, metricFamily.name);
+                    buffer.writeByte(' ');
+                    ByteBufUtil.writeUtf8(buffer, HELP_STRING_ESCAPER.escape(metricFamily.help));
+                    buffer.writeByte('\n');
+                }
 
-
-        @Override
-        protected Iterator<ByteBuf> delegate() {
-            return metricIterator;
-        }
-
-        private ByteBuf familyHeader(final MetricFamily metricFamily, final MetricFamilyType type) {
-            encodedFamilyName = ByteBufUtil.writeUtf8(ctx.alloc(), metricFamily.name);
-
-            final CompositeByteBuf header = ctx.alloc().compositeBuffer();
-
-            // # HELP <family name> <help>\n
-            if (metricFamily.help != null) {
-                header.addComponents(true,
-                        FAMILY_HEADER_HELP,
-                        encodedFamilyName.retain(),
-                        SPACE,
-                        ByteBufUtil.writeUtf8(ctx.alloc(), Escapers.HELP_STRING_ESCAPER.escape(metricFamily.help)),
-                        NEW_LINE);
+                // # TYPE <family name> <type> \n
+                ByteBufUtil.writeAscii(buffer, "# TYPE ");
+                ByteBufUtil.writeAscii(buffer, metricFamily.name);
+                buffer.writeByte(' ');
+                type.write(buffer);
+                buffer.writeByte('\n');
             }
 
-            // # TYPE <family name> <type>\n
-            header.addComponents(true,
-                    FAMILY_HEADER_TYPE,
-                    encodedFamilyName.retain(),
-                    SPACE,
-                    type.utf8Encoded,
-                    NEW_LINE);
+            private Consumer<ByteBuf> forType(final MetricFamily<?> metricFamily, final MetricFamilyType type) {
+                return (buffer) -> writeFamilyHeader(metricFamily, buffer, type);
+            }
 
-            return header;
+            @Override
+            public Consumer<ByteBuf> visit(final CounterMetricFamily metricFamily) {
+                return forType(metricFamily, MetricFamilyType.COUNTER);
+            }
+
+            @Override
+            public Consumer<ByteBuf> visit(final GaugeMetricFamily metricFamily) {
+                return forType(metricFamily, MetricFamilyType.GAUGE);
+            }
+
+            @Override
+            public Consumer<ByteBuf> visit(final SummaryMetricFamily metricFamily) {
+                return forType(metricFamily, MetricFamilyType.SUMMARY);
+            }
+
+            @Override
+            public Consumer<ByteBuf> visit(final HistogramMetricFamily metricFamily) {
+                return forType(metricFamily, MetricFamilyType.HISTOGRAM);
+            }
+
+            @Override
+            public Consumer<ByteBuf> visit(final UntypedMetricFamily metricFamily) {
+                return forType(metricFamily, MetricFamilyType.UNTYPED);
+            }
         }
 
-        private void addLabels(final CompositeByteBuf buffer, final Labels labels) {
-            if (labels.isEmpty())
+        class MetricVisitor implements MetricFamilyVisitor<Function<ByteBuf, Boolean>> {
+            private void writeLabels(final ByteBuf buffer, final Labels labels, final boolean commaPrefix) {
+                if (commaPrefix) {
+                    buffer.writeByte(',');
+                }
+
+                buffer.writeBytes(labels.asPlainTextFormatUTF8EncodedByteBuf().slice());
+            }
+
+            private void writeLabelSets(final ByteBuf buffer, final Labels... labelSets) {
+                buffer.writeByte('{');
+
+                boolean needsComma = false;
+
+                for (final Labels labels : labelSets) {
+                    if (labels.isEmpty())
+                        continue;
+
+                    writeLabels(buffer, labels, needsComma);
+
+                    needsComma = true;
+                }
+
+                if (!globalLabels.isEmpty()) {
+                    writeLabels(buffer, globalLabels, needsComma);
+                }
+
+                buffer.writeByte('}');
+            }
+
+            private void writeMetric(final ByteBuf buffer, final MetricFamily<?> metricFamily, final String suffix, final float value, final Labels... labelSets) {
+                ByteBufUtil.writeAscii(buffer, metricFamily.name);
+                if (suffix != null) {
+                    ByteBufUtil.writeAscii(buffer, suffix);
+                }
+
+                writeLabelSets(buffer, labelSets);
+
+                buffer.writeByte(' ');
+                ByteBufUtil.writeAscii(buffer, Float.toString(value)); // it'd be nice to have an optimised ftoa() implementation...
+                ByteBufUtil.writeAscii(buffer, timestamp);
+                buffer.writeByte('\n');
+            }
+
+            private <T extends Metric> Function<ByteBuf, Boolean> metricWriter(final MetricFamily<T> metricFamily, final BiConsumer<T, ByteBuf> writer) {
+                final Iterator<T> metricIterator = metricFamily.metrics.iterator();
+
+                return (buffer) -> {
+                    if (metricIterator.hasNext()) {
+                        writer.accept(metricIterator.next(), buffer);
+
+                        return true;
+                    }
+
+                    return false;
+                };
+            }
+
+            @Override
+            public Function<ByteBuf, Boolean> visit(final CounterMetricFamily metricFamily) {
+                return metricWriter(metricFamily, (counter, buffer) -> {
+                    writeMetric(buffer, metricFamily, null, counter.value, counter.labels);
+                });
+            }
+
+            @Override
+            public Function<ByteBuf, Boolean> visit(final GaugeMetricFamily metricFamily) {
+                return metricWriter(metricFamily, (gauge, buffer) -> {
+                    writeMetric(buffer, metricFamily, null, gauge.value, gauge.labels);
+                });
+            }
+
+            @Override
+            public Function<ByteBuf, Boolean> visit(final SummaryMetricFamily metricFamily) {
+                return metricWriter(metricFamily, (summary, buffer) -> {
+                    writeMetric(buffer, metricFamily, "_sum", summary.sum, summary.labels);
+                    writeMetric(buffer, metricFamily, "_count", summary.count, summary.labels);
+
+                    summary.quantiles.forEach((quantile, value) -> {
+                        writeMetric(buffer, metricFamily, null, value.floatValue(), summary.labels, quantile.asSummaryLabels());
+                    });
+                });
+            }
+
+            @Override
+            public Function<ByteBuf, Boolean> visit(final HistogramMetricFamily metricFamily) {
+                return metricWriter(metricFamily, (histogram, buffer) -> {
+                    writeMetric(buffer, metricFamily, "_sum", histogram.sum, histogram.labels);
+                    writeMetric(buffer, metricFamily, "_count", histogram.count, histogram.labels);
+
+                    histogram.buckets.forEach((quantile, value) -> {
+                        writeMetric(buffer, metricFamily, "_bucket", value.floatValue(), histogram.labels, quantile.asSummaryLabels());
+                    });
+                });
+            }
+
+            @Override
+            public Function<ByteBuf, Boolean> visit(final UntypedMetricFamily metricFamily) {
+                return metricWriter(metricFamily, (untyped, buffer) -> {
+                    writeMetric(buffer, metricFamily, null, untyped.value, untyped.labels);
+                });
+            }
+        }
+
+        MetricFamilyWriter(final MetricFamily<?> metricFamily) {
+            this.headerWriter = metricFamily.accept(new HeaderVisitor());
+            this.metricWriter = metricFamily.accept(new MetricVisitor());
+        }
+
+        void writeFamilyHeader(final ByteBuf buffer) {
+            this.headerWriter.accept(buffer);
+        }
+
+        boolean writeMetric(final ByteBuf buffer) {
+            return this.metricWriter.apply(buffer);
+        }
+    }
+
+    private void nextSlice(final ByteBuf chunkBuffer) throws Exception {
+        switch (state) {
+            case BANNER:
+                stopwatch.start();
+
+                chunkBuffer.writeBytes(BANNER.slice());
+
+                state = State.METRIC_FAMILY;
                 return;
 
-            buffer.addComponent(true, labels.asPlainTextFormatUTF8EncodedByteBuf().retain());
-        }
-
-        private void addLabelSets(final CompositeByteBuf buffer, final Labels... labelSets) {
-            buffer.addComponent(true, LEFT_BRACE);
-
-            final Iterator<Labels> labelSetsIterator = Iterators.concat(
-                    Iterators.forArray(labelSets),
-                    Iterators.singletonIterator(globalLabels)
-            );
-
-            while (labelSetsIterator.hasNext()) {
-                addLabels(buffer, labelSetsIterator.next());
-
-                if (labelSetsIterator.hasNext()) {
-                    buffer.addComponent(true, COMMA);
+            case METRIC_FAMILY:
+                if (!metricFamilyIterator.hasNext()) {
+                    state = State.FOOTER;
+                    return;
                 }
-            }
 
-            buffer.addComponent(true, RIGHT_BRACE);
-        }
+                metricFamilyCount++;
 
-        private void addMetric(final CompositeByteBuf buffer, final ByteBuf suffix, final float value, final Labels... labelSets) {
-            buffer.addComponent(true, encodedFamilyName.retain());
-            if (suffix != null) {
-                buffer.addComponent(true, suffix);
-            }
+                final MetricFamily<?> metricFamily = metricFamilyIterator.next();
 
-            addLabelSets(buffer, labelSets);
+                metricFamilyWriter = new MetricFamilyWriter(metricFamily);
 
-            buffer.addComponents(true,
-                    SPACE,
-                    ByteBufUtil.writeUtf8(ctx.alloc(), Float.toString(value)),
-                    timestamp.retain(),
-                    NEW_LINE
-            );
-        }
+                metricFamilyWriter.writeFamilyHeader(chunkBuffer);
 
-        private <T extends Metric> Iterator<ByteBuf> encodeMetrics(final MetricFamily<T> metricFamily, final BiConsumer<T, CompositeByteBuf> encoder) {
-            return Iterators.transform(metricFamily.metrics.iterator(), m -> {
-                final CompositeByteBuf buffer = ctx.alloc().compositeBuffer(50);
+                state = State.METRIC;
+                return;
 
-                encoder.accept(m, buffer);
-
-                return buffer;
-            });
-        }
-
-        @Override
-        public ByteBuf visit(final CounterMetricFamily metricFamily) {
-            metricIterator = encodeMetrics(metricFamily, (counter, buffer) -> {
-                addMetric(buffer, null, counter.value.floatValue(), counter.labels);
-            });
-
-            return familyHeader(metricFamily, MetricFamilyType.COUNTER);
-        }
-
-        @Override
-        public ByteBuf visit(final GaugeMetricFamily metricFamily) {
-            metricIterator = encodeMetrics(metricFamily, (gauge, buffer) -> {
-                addMetric(buffer, null, gauge.value.floatValue(), gauge.labels);
-            });
-
-            return familyHeader(metricFamily, MetricFamilyType.GAUGE);
-        }
-
-        @Override
-        public ByteBuf visit(final SummaryMetricFamily metricFamily) {
-            metricIterator = encodeMetrics(metricFamily, (summary, buffer) -> {
-                addMetric(buffer, SUFFIX_SUM, summary.sum.floatValue(), summary.labels);
-                addMetric(buffer, SUFFIX_COUNT, summary.count.floatValue(), summary.labels);
-
-                summary.quantiles.forEach((quantile, value) -> {
-                    addMetric(buffer, null, value.floatValue(), quantile.asSummaryLabels(), summary.labels);
-                });
-            });
-
-            return familyHeader(metricFamily, MetricFamilyType.SUMMARY);
-        }
-
-        @Override
-        public ByteBuf visit(final HistogramMetricFamily metricFamily) {
-            metricIterator = encodeMetrics(metricFamily, (histogram, buffer) -> {
-                addMetric(buffer, SUFFIX_SUM, histogram.sum.floatValue(), histogram.labels);
-                addMetric(buffer, SUFFIX_COUNT, histogram.count.floatValue(), histogram.labels);
-
-                histogram.quantiles.forEach((quantile, value) -> {
-                    addMetric(buffer, SUFFIX_BUCKET, value.floatValue(), quantile.asSummaryLabels(), histogram.labels);
-                });
-            });
-
-            return familyHeader(metricFamily, MetricFamilyType.HISTOGRAM);
-        }
-
-        @Override
-        public ByteBuf visit(final UntypedMetricFamily metricFamily) {
-            metricIterator = encodeMetrics(metricFamily, (untyped, buffer) -> {
-                addMetric(buffer, null, untyped.value.floatValue(), untyped.labels);
-            });
-
-            return familyHeader(metricFamily, MetricFamilyType.UNTYPED);
-        }
-
-        @Override
-        public void close() throws IOException {
-            // close should have no effect when called multiple times
-            if (encodedFamilyName.refCnt() > 0)
-                encodedFamilyName.release();
-        }
-    }
-
-    // this would be
-    private ByteBuf nextSlice(final ChannelHandlerContext ctx) throws Exception {
-        while (true) {
-            switch (state) {
-                case BANNER:
-                    // TODO: banner
+            case METRIC:
+                if (!metricFamilyWriter.writeMetric(chunkBuffer)) {
                     state = State.METRIC_FAMILY;
-                    continue;
+                    return;
+                }
 
-                case METRIC_FAMILY:
-                    if (!metricFamilyIterator.hasNext()) {
-                        state = State.FOOTER;
-                        continue;
-                    }
+                metricCount ++;
 
-                    state = State.METRIC;
-                    fooBar = new FooBar(ctx);
+                return;
 
-                    return metricFamilyIterator.next().accept(fooBar);
+            case FOOTER:
+                stopwatch.stop();
+                ByteBufUtil.writeAscii(chunkBuffer, "\n\n# Thanks and come again!\n\n");
+                ByteBufUtil.writeAscii(chunkBuffer, String.format("# Wrote %s metrics for %s metric families in %s\n", metricCount, metricFamilyCount, stopwatch.toString()));
 
-                case METRIC:
-                    if (!fooBar.hasNext()) {
-                        state = State.METRIC_FAMILY;
-                        fooBar.close();
-                        continue;
-                    }
+                state = State.EOF;
+                return;
 
-                    return fooBar.next();
+            case EOF:
+                return;
 
-                case FOOTER:
-                    // TODO: implement stats + footer
-                    state = State.EOF;
-                    continue;
-
-                case EOF:
-                    return null;
-
-                default:
-                    throw new IllegalStateException();
-            }
+            default:
+                throw new IllegalStateException();
         }
     }
 
     @Override
     public HttpContent readChunk(final ChannelHandlerContext ctx) throws Exception {
-        final CompositeByteBuf chunkBuffer = ctx.alloc().compositeBuffer(100);
+        final ByteBuf chunkBuffer = ctx.alloc().buffer(1024 * 1024 * 5);
 
         // add slices till we hit the chunk size (or slightly over it), or hit EOF
-        while (chunkBuffer.capacity() < 1024 * 1024) {
-            final ByteBuf slice = nextSlice(ctx);
-
-            if (slice == null) {
-                break;
-            }
-
-            chunkBuffer.addComponent(true, slice);
+        while (chunkBuffer.readableBytes() < 1024 * 1024 && state != State.EOF) {
+            nextSlice(chunkBuffer);
         }
 
         return new DefaultHttpContent(chunkBuffer);

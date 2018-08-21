@@ -10,10 +10,10 @@ import com.zegelin.prometheus.cassandra.collector.LatencyMetricGroupSummaryColle
 import com.zegelin.prometheus.cassandra.collector.dynamic.FunctionalMetricFamilyCollector;
 import com.zegelin.prometheus.domain.Labels;
 
-import javax.inject.Provider;
 import javax.management.*;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -21,13 +21,13 @@ import static com.zegelin.jmx.ObjectNames.format;
 import static com.zegelin.prometheus.cassandra.CollectorFunctions.*;
 
 @SuppressWarnings("SameParameterValue")
-public class FactoriesProvider implements Provider<List<Factory>> {
-    private static final Function<Number, Number> MILLISECONDS_TO_SECONDS = (number -> number.doubleValue() / 1.0E3);
-    private static final Function<Number, Number> MICROSECONDS_TO_SECONDS = (number -> number.doubleValue() / 1.0E6);
+public class FactoriesSupplier implements Supplier<List<Factory>> {
+    private static final Function<Float, Float> MILLISECONDS_TO_SECONDS = (f -> f / 1.0E3f);
+    private static final Function<Float, Float> MICROSECONDS_TO_SECONDS = (f -> f / 1.0E6f);
 
-    private static final Function<Number, Number> NEG1_TO_NAN = (number -> (number.intValue() == -1 ? Float.NaN : number));
+    private static final Function<Float, Float> NEG1_TO_NAN = (f -> (f == -1 ? Float.NaN : f));
 
-    private static final Function<Number, Number> PERCENT_TO_RATIO = (number -> number.doubleValue() / 100.d);
+    private static final Function<Float, Float> PERCENT_TO_RATIO = (f -> f / 100.f);
 
     /**
      * A builder of {@see MBeanGroupMetricFamilyCollector.Factory}s
@@ -100,7 +100,7 @@ public class FactoriesProvider implements Provider<List<Factory>> {
 
     private final MetadataFactory metadataFactory;
 
-    public FactoriesProvider(final MetadataFactory metadataFactory) {
+    public FactoriesSupplier(final MetadataFactory metadataFactory) {
         this.metadataFactory = metadataFactory;
     }
 

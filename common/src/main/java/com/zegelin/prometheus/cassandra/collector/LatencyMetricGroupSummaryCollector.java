@@ -105,10 +105,10 @@ public class LatencyMetricGroupSummaryCollector implements MBeanGroupMetricFamil
                 })
                 .filter(e -> !e.latencyMetricGroup.incomplete())
                 .map(e -> {
-                    final double count = e.latencyMetricGroup.latencyTimer.object.getCount();
-                    final double sum = e.latencyMetricGroup.totalLatencyCounter.object.getCount();
+                    final float count = e.latencyMetricGroup.latencyTimer.object.getCount();
+                    final float sum = e.latencyMetricGroup.totalLatencyCounter.object.getCount();
 
-                    final Map<Quantile, Number> quantiles = e.latencyMetricGroup.latencyTimer.object.getQuantiles();
+                    final Map<Quantile, Float> quantiles = e.latencyMetricGroup.latencyTimer.object.getQuantiles();
 
                     return new SummaryMetricFamily.Summary(e.labels, sum, count, quantiles);
                 });

@@ -12,5 +12,5 @@ import java.util.Map;
 public interface SamplingCounting {
     long getCount();
 
-    Map<Quantile, Number> getQuantiles();
+    Map<Quantile, Float> getQuantiles();
 }

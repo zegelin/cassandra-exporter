@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.management.*;
 import java.lang.management.ManagementFactory;
+import java.util.Set;
 
 class MBeanServerInterceptorHarvester extends Harvester {
     private static final Logger logger = LoggerFactory.getLogger(MBeanServerInterceptorHarvester.class);
@@ -40,8 +41,8 @@ class MBeanServerInterceptorHarvester extends Harvester {
         }
     }
 
-    MBeanServerInterceptorHarvester() {
-        super(new FactoriesProvider(new InternalMetadataFactory()), exclusions, globalLabels);
+    MBeanServerInterceptorHarvester(final Set<Exclusion> exclusions, final Set<GlobalLabel> globalLabels) {
+        super(new FactoriesSupplier(new InternalMetadataFactory()), exclusions, globalLabels);
 
         registerMBeanServerInterceptor();
     }

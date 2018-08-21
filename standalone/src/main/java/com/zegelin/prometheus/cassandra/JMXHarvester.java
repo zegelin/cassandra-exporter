@@ -29,8 +29,8 @@ public class JMXHarvester extends Harvester {
     @SuppressWarnings("FieldCanBeLocal")
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 
-    public JMXHarvester(final MBeanServerConnection mBeanServerConnection, final Set<Exclusion> exclusions, final Set<GlobalLabel> globalLabels) {
-        super(new FactoriesProvider(new RemoteMetadataFactory()), exclusions, globalLabels);
+    JMXHarvester(final MBeanServerConnection mBeanServerConnection, final Set<Exclusion> exclusions, final Set<GlobalLabel> globalLabels) {
+        super(new FactoriesSupplier(new RemoteMetadataFactory()), exclusions, globalLabels);
 
         this.mBeanServerConnection = mBeanServerConnection;
 

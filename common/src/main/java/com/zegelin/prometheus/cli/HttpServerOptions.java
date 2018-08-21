@@ -1,16 +1,18 @@
-package com.zegelin.prometheus.cassandra.cli;
+package com.zegelin.prometheus.cli;
 
 import com.google.common.collect.ImmutableList;
 
 import com.zegelin.picocli.InetSocketAddressTypeConverter;
+import com.zegelin.prometheus.netty.HttpHandler;
+import picocli.CommandLine;
 import picocli.CommandLine.Option;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.List;
 
-public class HTTPServerOptions {
-    private static final int DEFAULT_PORT = 7890;
+public class HttpServerOptions {
+    private static final int DEFAULT_PORT = 9500;
 
     static class ListenInetSocketAddressTypeConverter extends InetSocketAddressTypeConverter {
         @Override
@@ -30,4 +32,16 @@ public class HTTPServerOptions {
                     "This option may be specified more than once to listen on multiple addresses. " +
                     "Defaults to '0.0.0.0:" + DEFAULT_PORT + "'")
     public List<InetSocketAddress> listenAddresses = ImmutableList.of(new InetSocketAddress((InetAddress) null, DEFAULT_PORT));
+
+    @Option(names = {"--family-help"},
+            paramLabel = "VALUE",
+            description = "Include or exclude metric family help in the exposition format. " +
+                    "AUTOMATIC excludes help strings when the user agent is Prometheus and includes them for all other clients (cURL, browsers, etc). " +
+                    "Currently Prometheus discards help strings. " +
+                    "Excluding help strings saves bandwidth. " +
+                    "Can be overridden with the \"?help=true|false\" URI query parameter. " +
+                    "Valid values: ${COMPLETION-CANDIDATES}. " +
+                    "Defaults to AUTOMATIC."
+    )
+    public HttpHandler.HelpExposition helpExposition = HttpHandler.HelpExposition.AUTOMATIC;
 }
