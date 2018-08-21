@@ -2,6 +2,8 @@
 
 *Project Status: beta*
 
+[![CircleCI](https://circleci.com/gh/zegelin/cassandra-exporter.svg?style=svg)](https://circleci.com/gh/zegelin/cassandra-exporter)
+
 ## Introduction
 
 *cassandra-exporter* is a Java agent (with optional standalone mode) that exports Cassandra metrics to [Prometheus](http://prometheus.io).
