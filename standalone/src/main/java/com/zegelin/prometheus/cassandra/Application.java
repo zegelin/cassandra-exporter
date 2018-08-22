@@ -14,6 +14,8 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 import java.util.concurrent.Callable;
+import java.util.Map;
+import java.util.HashMap;
 
 import static picocli.CommandLine.*;
 
@@ -32,10 +34,22 @@ public class Application implements Callable<Void> {
                     "Defaults to '${DEFAULT-VALUE}'")
     private JMXServiceURL jmxServiceURL;
 
+    @Option(names = "--jmx-user", paramLabel = "NAME", description = "The JMX authentication user name")
+    private String jmxUser;
+
+    @Option(names = "--jmx-password", paramLabel = "PASSWORD", description = "The JMX authentication password")
+    private String jmxPassword;
 
     @Override
     public Void call() throws Exception {
-        final JMXConnector connector = JMXConnectorFactory.connect(jmxServiceURL, null);
+        Map<String, String[]> environment = null;
+
+        if (jmxUser != "" || jmxPassword != "") {
+            environment = new HashMap<>();
+            environment.put(JMXConnector.CREDENTIALS, new String[] {jmxUser, jmxPassword});
+        }
+
+        final JMXConnector connector = JMXConnectorFactory.connect(jmxServiceURL, environment);
         final MBeanServerConnection serverConnection = connector.getMBeanServerConnection();
 
         final JMXHarvester harvester = new JMXHarvester(serverConnection, harvesterOptions.exclusions, harvesterOptions.globalLabels);
