@@ -47,6 +47,13 @@
             <groupId>com.datastax.cassandra</groupId>
             <artifactId>cassandra-driver-core</artifactId>
             <version>3.4.0</version>
+            <exclusions>
+                <!-- exclude netty, as it's pulled in as a direct dependency below -->
+                <exclusion>
+                    <artifactId>netty-handler</artifactId>
+                    <groupId>io.netty</groupId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
