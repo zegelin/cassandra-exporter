@@ -83,20 +83,19 @@ The format/structure of the JSON output is subject to change.
 
 The available command line options may be seen by passing `-h`/`--help`:
 
-    Usage: <main class> [-hV] [--no-global-labels] [--family-help=VALUE]
-                        [--jmx-service-url=URL] [-g=LABEL[,LABEL...]]... [-l=
-                        [ADDRESS][:PORT]]... [-e=EXCLUSION...]...
-          --family-help=VALUE   Include or exclude metric family help in the exposition
-                                  format. AUTOMATIC excludes help strings when the user
-                                  agent is Prometheus and includes them for all other
-                                  clients (cURL, browsers, etc). Currently Prometheus
-                                  discards help strings. Excluding help strings saves
-                                  bandwidth. Can be overridden with the "?
-                                  help=true|false" URI query parameter. Valid values:
-                                  INCLUDE, EXCLUDE, AUTOMATIC. Defaults to AUTOMATIC.
-          --jmx-service-url=URL The JMX service URL of the Cassandra instance to connect
-                                  to and collect metrics. Defaults to 'service:jmx:rmi:
-                                  ///jndi/rmi://localhost:7199/jmxrmi'
+    Usage: cassandra-exporter [-hV] [--no-global-labels]
+                                         [--family-help=VALUE]
+                                         [--jmx-password=PASSWORD]
+                                         [--jmx-service-url=URL] [--jmx-user=NAME]
+                                         [-g=LABEL[,LABEL...]]... [-l=[ADDRESS][:
+                                         PORT]]... [-e=EXCLUSION...]...
+      -g, --global-labels=LABEL[,LABEL...]
+                                Select which global labels to include on all exported
+                                  metrics. Valid options are: 'cluster_name', 'host_id'
+                                  (UUID of the node), 'node' (node endpoint IP address),
+                                  'datacenter', 'rack'. The default is to include all
+                                  global labels. To disable all global labels use
+                                  --no-global-labels.
           --no-global-labels    Disable all global labels.
       -e, --exclude=EXCLUSION...
                                 Exclude a metric family or MBean from exposition.
@@ -111,37 +110,57 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   prefixed with '#' are considered comments and are
                                   ignored. This option may be specified more than once
                                   to define multiple exclusions.
-      -g, --global-labels=LABEL[,LABEL...]
-                                Select which global labels to include on all exported
-                                  metrics. Valid options are: 'cluster_name', 'host_id'
-                                  (UUID of the node), 'node' (node endpoint IP address),
-                                  'datacenter', 'rack'. The default is to include all
-                                  global labels. To disable all global labels use
-                                  --no-global-labels.
-      -h, --help                Show this help message and exit.
       -l, --listen=[ADDRESS][:PORT]
                                 Listen address (and optional port). ADDRESS may be a
                                   hostname, IPv4 dotted or decimal address, or IPv6
                                   address. When ADDRESS is omitted, 0.0.0.0 (wildcard)
                                   is substituted. PORT, when specified, must be a valid
-                                  port number. The default port 7890 will be substituted
+                                  port number. The default port 9500 will be substituted
                                   if omitted. If ADDRESS is omitted but PORT is
                                   specified, PORT must be prefixed with a colon (':'),
                                   or PORT will be interpreted as a decimal IPv4 address.
                                   This option may be specified more than once to listen
-                                  on multiple addresses. Defaults to '0.0.0.0:7890'
+                                  on multiple addresses. Defaults to '0.0.0.0:9500'
+          --family-help=VALUE   Include or exclude metric family help in the exposition
+                                  format. AUTOMATIC excludes help strings when the user
+                                  agent is Prometheus and includes them for all other
+                                  clients (cURL, browsers, etc). Currently Prometheus
+                                  discards help strings. Excluding help strings saves
+                                  bandwidth. Can be overridden with the "?
+                                  help=true|false" URI query parameter. Valid values:
+                                  INCLUDE, EXCLUDE, AUTOMATIC. Defaults to AUTOMATIC.
+          --jmx-service-url=URL The JMX service URL of the Cassandra instance to connect
+                                  to and collect metrics. Defaults to 'service:jmx:rmi:
+                                  ///jndi/rmi://localhost:7199/jmxrmi'
+          --jmx-user=NAME       The JMX authentication user name.
+          --jmx-password=PASSWORD
+                                The JMX authentication password.
+      -h, --help                Show this help message and exit.
       -V, --version             Print version information and exit.
 
+Options may also be provided via an `@`-file:
+    
+- *Standalone*
 
-Note that `--jmx-service-url` is only applicable to the standalone version -- the agent does not use JMX.
+      java -jar /path/to/cassandra-exporter-standalone-<version>.jar @/path/to/options/file
+      
+- *Agent*
+
+      JVM_OPTS="$JVM_OPTS -javaagent:$CASSANDRA_HOME/lib/cassandra-exporter-agent-<version>.jar=@/path/to/options/file"
+      
+    `@$CASSANDRA_CONF/cassandra-exporter.options` is a good choice.
+
+Note that `--jmx-service-url`, `--jmx-user` and `--jmx-password` are only applicable to the standalone version -- the agent does not use JMX.
+To protect the JMX password and prevent it from showing up in `ps`, `top` and other utilities, use an `@`-file that contains `--jmx-password=PASSWORD`.
 
 When run as an agent, command line options must be provided as part of the `-javaagent` flag, with an equals sign (`=`) separating the JAR path and the agent options.
 Multiple options, or option arguments can be separated by commas (`,`) or spaces. Commas are preferred as the whitespace quoting rules of `cassandra-env.sh` are quite complex.
-Options with values containing whitespace must be quoted appropriately.
+Options with values containing whitespace must be quoted appropriately. Alternatively use an `@`-file (see above).
 
 For example, to change the agent listening port to 1234 and exclude some metrics:
 
     JVM_OPTS="$JVM_OPTS -javaagent:$CASSANDRA_HOME/lib/cassandra-exporter-agent-<version>.jar=--listen=:1234,--exclude=@$CASSANDRA_CONF/prometheus-exclusions"
+    
 
 ### Endpoints
 

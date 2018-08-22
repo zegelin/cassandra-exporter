@@ -37,16 +37,14 @@ public class HarvesterOptions {
 
                 try {
                     Files.lines(file)
-                        .filter(line -> !line.startsWith("#"))
-                        .map(String::trim)
+                            .filter(line -> !line.startsWith("#"))
+                            .map(String::trim)
                             .filter(String::isEmpty)
-                        .forEach(line -> this.exclusions.add(Harvester.Exclusion.create(line)));
+                            .forEach(line -> this.exclusions.add(Harvester.Exclusion.create(line)));
 
                     processedExclusionFiles.add(file);
 
                 } catch (final IOException e) {
-                    // TODO: this will currently throw a NPE since CommandSpecs injected into mixins don't have a CommandLine
-                    // see https://github.com/remkop/picocli/issues/439
                     throw new CommandLine.ParameterException(commandSpec.commandLine(),
                             String.format("Failed to read exclusions from '%s'", file), e);
                 }

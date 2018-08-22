@@ -1,5 +1,6 @@
 package com.zegelin.prometheus.cassandra;
 
+import com.google.common.collect.ImmutableMap;
 import com.zegelin.picocli.JMXServiceURLTypeConverter;
 import com.zegelin.prometheus.cli.HttpServerOptions;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
@@ -15,12 +16,15 @@ import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 import java.util.concurrent.Callable;
 import java.util.Map;
-import java.util.HashMap;
+
 
 import static picocli.CommandLine.*;
 
-@Command(mixinStandardHelpOptions = true)
+@Command(name = "cassandra-exporter-standalone", mixinStandardHelpOptions = true, sortOptions = false)
 public class Application implements Callable<Void> {
+    @Spec
+    private Model.CommandSpec commandSpec;
+
     @Mixin
     private HarvesterOptions harvesterOptions;
 
@@ -34,22 +38,28 @@ public class Application implements Callable<Void> {
                     "Defaults to '${DEFAULT-VALUE}'")
     private JMXServiceURL jmxServiceURL;
 
-    @Option(names = "--jmx-user", paramLabel = "NAME", description = "The JMX authentication user name")
+    @Option(names = "--jmx-user", paramLabel = "NAME", description = "The JMX authentication user name.")
     private String jmxUser;
 
-    @Option(names = "--jmx-password", paramLabel = "PASSWORD", description = "The JMX authentication password")
+    @Option(names = "--jmx-password", paramLabel = "PASSWORD", description = "The JMX authentication password.")
     private String jmxPassword;
+
 
     @Override
     public Void call() throws Exception {
-        Map<String, String[]> environment = null;
+        Map<String, String[]> jmxEnvironment = null;
 
-        if (jmxUser != "" || jmxPassword != "") {
-            environment = new HashMap<>();
-            environment.put(JMXConnector.CREDENTIALS, new String[] {jmxUser, jmxPassword});
+        if (jmxUser != null ^ jmxPassword != null) {
+            throw new ParameterException(commandSpec.commandLine(), "Both --jmx-user and --jmx-password are required when either is used.");
         }
 
-        final JMXConnector connector = JMXConnectorFactory.connect(jmxServiceURL, environment);
+        if (jmxUser != null && jmxPassword != null) {
+            jmxEnvironment = ImmutableMap.of(
+                    JMXConnector.CREDENTIALS, new String[]{jmxUser, jmxPassword}
+            );
+        }
+
+        final JMXConnector connector = JMXConnectorFactory.connect(jmxServiceURL, jmxEnvironment);
         final MBeanServerConnection serverConnection = connector.getMBeanServerConnection();
 
         final JMXHarvester harvester = new JMXHarvester(serverConnection, harvesterOptions.exclusions, harvesterOptions.globalLabels);
