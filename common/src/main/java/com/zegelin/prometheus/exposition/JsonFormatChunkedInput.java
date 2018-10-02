@@ -3,6 +3,7 @@ package com.zegelin.prometheus.exposition;
 import com.google.common.base.Stopwatch;
 import com.google.common.escape.CharEscaperBuilder;
 import com.google.common.escape.Escaper;
+import com.zegelin.netty.Floats;
 import com.zegelin.prometheus.domain.*;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
@@ -54,7 +55,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
             .toEscaper();
 
 
-    private final Iterator<MetricFamily<?>> metricFamilyIterator;
+    private final Iterator<MetricFamily> metricFamilyIterator;
 
     private final Instant timestamp;
     private final Labels globalLabels;
@@ -69,7 +70,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
     private final Stopwatch stopwatch = Stopwatch.createUnstarted();
 
 
-    public JsonFormatChunkedInput(final Stream<MetricFamily<?>> metricFamilies, final Instant timestamp, final Labels globalLabels, final boolean includeHelp) {
+    public JsonFormatChunkedInput(final Stream<MetricFamily> metricFamilies, final Instant timestamp, final Labels globalLabels, final boolean includeHelp) {
         this.metricFamilyIterator = metricFamilies.iterator();
         this.timestamp = timestamp;
         this.globalLabels = globalLabels;
@@ -135,7 +136,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
                 return;
             }
 
-            ByteBufUtil.writeAscii(buffer, Float.toString(f));
+            Floats.writeFloatString(buffer, f);
         }
 
         private static void writeLong(final ByteBuf buffer, final long l) {
@@ -277,17 +278,18 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
                 Json.writeFloat(buffer, count);
             }
 
-            private void writeQuantiles(final ByteBuf buffer, final Map<Quantile, Float> quantiles) {
+            private void writeIntervals(final ByteBuf buffer, final Stream<Interval> intervals) {
                 Json.Token.OBJECT_START.write(buffer);
 
-                final Iterator<Map.Entry<Quantile, Float>> quantilesIterator = quantiles.entrySet().iterator();
+                final Iterator<Interval> iterator = intervals.iterator();
 
-                while (quantilesIterator.hasNext()) {
-                    final Map.Entry<Quantile, Float> quantile = quantilesIterator.next();
-                    Json.writeObjectKey(buffer, quantile.getKey().toString());
-                    Json.writeFloat(buffer, quantile.getValue());
+                while (iterator.hasNext()) {
+                    final Interval interval = iterator.next();
 
-                    if (quantilesIterator.hasNext()) {
+                    Json.writeObjectKey(buffer, interval.quantile.toString());
+                    Json.writeFloat(buffer, interval.value);
+
+                    if (iterator.hasNext()) {
                         Json.Token.COMMA.write(buffer);
                     }
                 }
@@ -305,7 +307,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
                     Json.Token.COMMA.write(buffer);
 
                     Json.writeObjectKey(buffer, "quantiles");
-                    writeQuantiles(buffer, summary.quantiles);
+                    writeIntervals(buffer, summary.quantiles);
 
                     Json.Token.OBJECT_END.write(buffer);
                 });
@@ -321,7 +323,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
                     Json.Token.COMMA.write(buffer);
 
                     Json.writeObjectKey(buffer, "buckets");
-                    writeQuantiles(buffer, histogram.buckets);
+                    writeIntervals(buffer, histogram.buckets);
 
                     Json.Token.OBJECT_END.write(buffer);
                 });

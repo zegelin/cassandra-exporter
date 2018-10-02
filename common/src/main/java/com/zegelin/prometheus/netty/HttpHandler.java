@@ -1,7 +1,10 @@
 package com.zegelin.prometheus.netty;
 
 import com.google.common.base.Splitter;
-import com.google.common.collect.*;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMultimap;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Multimap;
 import com.google.common.net.MediaType;
 import com.zegelin.netty.Resources;
 import com.zegelin.prometheus.cassandra.Harvester;
@@ -28,7 +31,7 @@ import java.util.stream.StreamSupport;
 
 // look ma, it's a mini HTTP server...
 // missing a bunch of things, but it works with Prometheus, browsers and curl.. good enough
-// (and better than pulling in all of Jersey, and farm more performant too -- we can write byte buffers instead of an OutputStream)
+// (and better than pulling in all of Jersey, and far more performant too -- we can write to byte buffers instead of an OutputStream)
 public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
     private static final Logger logger = LoggerFactory.getLogger(HttpHandler.class);
 
@@ -60,7 +63,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
     public enum HelpExposition {
         INCLUDE,
         EXCLUDE,
-        AUTOMATIC;
+        AUTOMATIC
     }
 
     private final Harvester harvester;
@@ -235,7 +238,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
                     switch (helpExposition) {
                         case AUTOMATIC:
-                            // if the requester is Prometheus, exclude the help strings -- they are thrown away and just waste bandwidth
+                            // if the requester is Prometheus, exclude the help strings -- they are currently thrown away and just waste bandwidth
                             if (userAgent.startsWith("Prometheus")) {
                                 return false;
                             }
@@ -259,7 +262,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
             final DefaultHttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
 
-            final Stream<MetricFamily<?>> metricFamilyStream = harvester.collect();
+            final Stream<MetricFamily> metricFamilyStream = harvester.collect();
             final Instant timestamp = Instant.now();
             final Labels globalLabels = harvester.globalLabels();
 

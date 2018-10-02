@@ -1,5 +1,6 @@
 package com.zegelin.prometheus.cassandra.cli;
 
+import com.zegelin.netty.Floats;
 import com.zegelin.prometheus.cassandra.Harvester;
 import picocli.CommandLine;
 import picocli.CommandLine.Option;
@@ -8,7 +9,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.Set;
 
 public class HarvesterOptions {
     private final Set<Path> processedExclusionFiles = new HashSet<>();
@@ -71,4 +74,14 @@ public class HarvesterOptions {
     public void setNoGlobalLabels(final boolean noGlobalLabels) {
         this.globalLabels = (noGlobalLabels ? EnumSet.noneOf(Harvester.GlobalLabel.class) : EnumSet.allOf(Harvester.GlobalLabel.class));
     }
+
+    @Option(names = {"--no-fast-float"},
+            description = "Disable the use of fast float -> ascii conversion.")
+    public void setNoFastFloat(final boolean noFastFloat) {
+        Floats.useFastFloat = !noFastFloat;
+    }
+
+    @Option(names = {"--enable-per-thread-cpu-times"},
+            description = "Collect per-thread CPU times, where each thread gets its own time-series. (EXPERIMENTAL)")
+    public boolean perThreadTimingEnabled;
 }

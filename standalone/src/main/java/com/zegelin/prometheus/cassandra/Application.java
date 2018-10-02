@@ -2,21 +2,18 @@ package com.zegelin.prometheus.cassandra;
 
 import com.google.common.collect.ImmutableMap;
 import com.zegelin.picocli.JMXServiceURLTypeConverter;
-import com.zegelin.prometheus.cli.HttpServerOptions;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
-
-
+import com.zegelin.prometheus.cli.HttpServerOptions;
 import com.zegelin.prometheus.netty.Server;
 import picocli.CommandLine;
-import picocli.CommandLine.Option;
+import picocli.CommandLine.*;
 
 import javax.management.MBeanServerConnection;
 import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
-import java.util.concurrent.Callable;
 import java.util.Map;
-
+import java.util.concurrent.Callable;
 
 import static picocli.CommandLine.*;
 
@@ -62,7 +59,7 @@ public class Application implements Callable<Void> {
         final JMXConnector connector = JMXConnectorFactory.connect(jmxServiceURL, jmxEnvironment);
         final MBeanServerConnection serverConnection = connector.getMBeanServerConnection();
 
-        final JMXHarvester harvester = new JMXHarvester(serverConnection, harvesterOptions.exclusions, harvesterOptions.globalLabels);
+        final JMXHarvester harvester = new JMXHarvester(serverConnection, harvesterOptions);
 
         Server.start(httpServerOptions.listenAddresses, harvester, httpServerOptions.helpExposition);
 

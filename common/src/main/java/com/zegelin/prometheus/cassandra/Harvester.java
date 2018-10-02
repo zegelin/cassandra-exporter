@@ -3,6 +3,7 @@ package com.zegelin.prometheus.cassandra;
 import com.google.common.collect.ImmutableMap;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.jmx.ObjectNames;
+import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
 import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
 import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
@@ -126,10 +127,10 @@ public abstract class Harvester {
     private final Set<GlobalLabel> enabledGlobalLabels;
 
 
-    protected Harvester(final Supplier<List<MBeanGroupMetricFamilyCollector.Factory>> factoriesSupplier, final Set<Exclusion> exclusions, final Set<GlobalLabel> enabledGlobalLabels) {
-        this.collectorFactories = factoriesSupplier.get();
-        this.exclusions = exclusions;
-        this.enabledGlobalLabels = enabledGlobalLabels;
+    protected Harvester(final MetadataFactory metadataFactory, final HarvesterOptions options) {
+        this.collectorFactories = new FactoriesSupplier(metadataFactory, options).get();
+        this.exclusions = options.exclusions;
+        this.enabledGlobalLabels = options.globalLabels;
     }
 
 
@@ -204,7 +205,7 @@ public abstract class Harvester {
         return false;
     }
 
-    public Stream<MetricFamily<?>> collect() {
+    public Stream<MetricFamily> collect() {
         return mBeanCollectorsByName.entrySet().parallelStream().flatMap((e) -> {
             try {
                 return e.getValue().collect();
@@ -218,6 +219,8 @@ public abstract class Harvester {
     }
 
     public Labels globalLabels() {
+        // TODO: memoize the result of this function
+
         try {
             requiredMBeansLatch.await();
 

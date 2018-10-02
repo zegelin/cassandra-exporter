@@ -1,20 +1,18 @@
 package com.zegelin.prometheus.domain;
 
 import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableSet;
 
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Stream;
 
 public abstract class MetricFamily<T extends Metric> {
     public final String name, help;
-    public final Set<T> metrics;
+    public final Stream<T> metrics;
 
     protected MetricFamily(final String name, final String help, final Stream<T> metrics) {
         this.name = name;
         this.help = help;
-        this.metrics = ImmutableSet.copyOf(metrics.iterator());
+        this.metrics = metrics;
     }
 
     public abstract <R> R accept(final MetricFamilyVisitor<R> visitor);
@@ -38,7 +36,6 @@ public abstract class MetricFamily<T extends Metric> {
         return MoreObjects.toStringHelper(this)
                 .add("name", name)
                 .add("help", help)
-                .add("metrics", metrics)
                 .toString();
     }
 }

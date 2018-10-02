@@ -1,8 +1,5 @@
 package com.zegelin.prometheus.domain;
 
-import com.google.common.collect.ImmutableMap;
-
-import java.util.Map;
 import java.util.stream.Stream;
 
 public class SummaryMetricFamily extends MetricFamily<SummaryMetricFamily.Summary> {
@@ -18,14 +15,14 @@ public class SummaryMetricFamily extends MetricFamily<SummaryMetricFamily.Summar
     public static class Summary extends Metric {
         public final float sum;
         public final float count;
-        public final Map<Quantile, Float> quantiles;
+        public final Stream<Interval> quantiles;
 
-        public Summary(final Labels labels, final float sum, final float count, final Map<Quantile, Float> quantiles) {
+        public Summary(final Labels labels, final float sum, final float count, final Stream<Interval> quantiles) {
             super(labels);
 
             this.sum = sum;
             this.count = count;
-            this.quantiles = ImmutableMap.copyOf(quantiles);
+            this.quantiles = quantiles;
         }
     }
 }
