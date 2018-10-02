@@ -3,10 +3,13 @@ package com.zegelin.prometheus.exposition;
 import com.google.common.base.Stopwatch;
 import com.google.common.escape.CharEscaperBuilder;
 import com.google.common.escape.Escaper;
+import com.zegelin.netty.Floats;
 import com.zegelin.netty.Resources;
 import com.zegelin.prometheus.domain.*;
-import com.zegelin.prometheus.netty.HttpHandler;
-import io.netty.buffer.*;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.DefaultHttpContent;
 import io.netty.handler.codec.http.HttpContent;
@@ -60,7 +63,7 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
 
     private static final ByteBuf BANNER = Resources.asByteBuf(TextFormatChunkedInput.class, "banner.txt");
 
-    private final Iterator<MetricFamily<?>> metricFamilyIterator;
+    private final Iterator<MetricFamily> metricFamilyIterator;
 
     private final String timestamp;
     private final Labels globalLabels;
@@ -75,7 +78,7 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
     private final Stopwatch stopwatch = Stopwatch.createUnstarted();
 
 
-    public TextFormatChunkedInput(final Stream<MetricFamily<?>> metricFamilies, final Instant timestamp, final Labels globalLabels, final boolean includeHelp) {
+    public TextFormatChunkedInput(final Stream<MetricFamily> metricFamilies, final Instant timestamp, final Labels globalLabels, final boolean includeHelp) {
         this.metricFamilyIterator = metricFamilies.iterator();
         this.timestamp = " " + Long.toString(timestamp.toEpochMilli());
         this.globalLabels = globalLabels;
@@ -121,7 +124,7 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
         private final Function<ByteBuf, Boolean> metricWriter;
 
         class HeaderVisitor implements MetricFamilyVisitor<Consumer<ByteBuf>> {
-            private void writeFamilyHeader(final MetricFamily<?> metricFamily, final ByteBuf buffer, final MetricFamilyType type) {
+            private void writeFamilyHeader(final MetricFamily metricFamily, final ByteBuf buffer, final MetricFamilyType type) {
                 buffer.writeByte('\n');
 
                 // # HELP <family name> <help>\n
@@ -141,7 +144,7 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
                 buffer.writeByte('\n');
             }
 
-            private Consumer<ByteBuf> forType(final MetricFamily<?> metricFamily, final MetricFamilyType type) {
+            private Consumer<ByteBuf> forType(final MetricFamily metricFamily, final MetricFamilyType type) {
                 return (buffer) -> writeFamilyHeader(metricFamily, buffer, type);
             }
 
@@ -201,7 +204,7 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
                 buffer.writeByte('}');
             }
 
-            private void writeMetric(final ByteBuf buffer, final MetricFamily<?> metricFamily, final String suffix, final float value, final Labels... labelSets) {
+            private void writeMetric(final ByteBuf buffer, final MetricFamily metricFamily, final String suffix, final float value, final Labels... labelSets) {
                 ByteBufUtil.writeAscii(buffer, metricFamily.name);
                 if (suffix != null) {
                     ByteBufUtil.writeAscii(buffer, suffix);
@@ -210,8 +213,9 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
                 writeLabelSets(buffer, labelSets);
 
                 buffer.writeByte(' ');
-                ByteBufUtil.writeAscii(buffer, Float.toString(value)); // it'd be nice to have an optimised ftoa() implementation...
-                ByteBufUtil.writeAscii(buffer, timestamp);
+
+                Floats.writeFloatString(buffer, value);
+                ByteBufUtil.writeAscii(buffer, timestamp); // timestamp already has a leading space
                 buffer.writeByte('\n');
             }
 
@@ -249,8 +253,8 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
                     writeMetric(buffer, metricFamily, "_sum", summary.sum, summary.labels);
                     writeMetric(buffer, metricFamily, "_count", summary.count, summary.labels);
 
-                    summary.quantiles.forEach((quantile, value) -> {
-                        writeMetric(buffer, metricFamily, null, value.floatValue(), summary.labels, quantile.asSummaryLabels());
+                    summary.quantiles.forEach(interval -> {
+                        writeMetric(buffer, metricFamily, null, interval.value, summary.labels, interval.quantile.asSummaryLabel());
                     });
                 });
             }
@@ -261,9 +265,11 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
                     writeMetric(buffer, metricFamily, "_sum", histogram.sum, histogram.labels);
                     writeMetric(buffer, metricFamily, "_count", histogram.count, histogram.labels);
 
-                    histogram.buckets.forEach((quantile, value) -> {
-                        writeMetric(buffer, metricFamily, "_bucket", value.floatValue(), histogram.labels, quantile.asSummaryLabels());
+                    histogram.buckets.forEach(interval -> {
+                        writeMetric(buffer, metricFamily, "_bucket", interval.value, histogram.labels, interval.quantile.asHistogramLabel());
                     });
+
+                    writeMetric(buffer, metricFamily, "_bucket", histogram.count, histogram.labels, Interval.Quantile.POSITIVE_INFINITY.asHistogramLabel());
                 });
             }
 

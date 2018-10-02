@@ -22,7 +22,7 @@ public class FunctionalMetricFamilyCollector<T> implements MBeanGroupMetricFamil
         Map<Labels, T> labeledObjects();
     }
 
-    public interface CollectorFunction<T> extends Function<LabeledObjectGroup<T>, Stream<? extends MetricFamily<?>>> {}
+    public interface CollectorFunction<T> extends Function<LabeledObjectGroup<T>, Stream<MetricFamily>> {}
 
 
     private final CollectorFunction<T> collectorFunction;
@@ -68,7 +68,7 @@ public class FunctionalMetricFamilyCollector<T> implements MBeanGroupMetricFamil
 
         final FunctionalMetricFamilyCollector<T> other = (FunctionalMetricFamilyCollector<T>) rawOther;
 
-        final HashMap<Labels, NamedObject<T>> labeledObjects = new HashMap<>(this.labeledObjects);
+        final Map<Labels, NamedObject<T>> labeledObjects = new HashMap<>(this.labeledObjects);
         for (final Map.Entry<Labels, NamedObject<T>> entry : other.labeledObjects.entrySet()) {
             labeledObjects.merge(entry.getKey(), entry.getValue(), (o1, o2) -> {throw new IllegalStateException(String.format("Object %s and %s cannot be merged, yet their labels are the same.", o1, o2));});
         }
@@ -88,7 +88,7 @@ public class FunctionalMetricFamilyCollector<T> implements MBeanGroupMetricFamil
     }
 
     @Override
-    public Stream<? extends MetricFamily<?>> collect() {
+    public Stream<MetricFamily> collect() {
         return collectorFunction.apply(objectGroup);
     }
 }

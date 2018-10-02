@@ -1,8 +1,7 @@
-# cassandra-exporter
+# cassandra-exporter [![CircleCI](https://circleci.com/gh/zegelin/cassandra-exporter.svg?style=svg)](https://circleci.com/gh/zegelin/cassandra-exporter)
 
 *Project Status: beta*
 
-[![CircleCI](https://circleci.com/gh/zegelin/cassandra-exporter.svg?style=svg)](https://circleci.com/gh/zegelin/cassandra-exporter)
 
 ## Introduction
 
@@ -10,7 +9,19 @@
 
 It enables high performance collection of Cassandra metrics and follows the Prometheus best practices for metrics naming and labeling.
 
-For example, the following PromQL query will return an estimate of the number of pending compactions per keyspace, per node.
+![Benchamrk Results](doc/benchmark-results.png)
+
+*cassandra-exporter* is fast. In a worst-case benchmark, where the Cassandra schema contains 1000+ tables (resulting in ~174 thousand metrics),
+*cassandra-exporter* completes exposition in ~140ms. Compared to the next-best, *jmx_exporter*, which completes exposition in _~8 seconds_.
+Other solutions can take _tens of seconds_, during which CPU time is consumed querying JMX and serialising values.
+
+There is no caching involved -- all metrics exposed by *cassandra-exporter* are live
+(except `cassandra_table_snapshots_size_total_bytes`, which is expensive to query).
+
+*cassandra-exporter* exports metric families, where the names, labels, metric types (gauge, counter, summary, etc), and value scales 
+have been hand-tuned to produce easy-to-query output.
+
+For example, the following PromQL query will return an estimate of the number of pending compactions per-keyspace, per-node.
 
     sum(cassandra_table_estimated_pending_compactions) by (cassandra_node, keyspace)
 
@@ -21,7 +32,7 @@ For example, the following PromQL query will return an estimate of the number of
 
 | Component       | Version       |
 |-----------------|---------------|
-| Apache Cassandra| 3.11.2        |
+| Apache Cassandra| 3.11.2, 3.11.3        |
 | Prometheus      | 2.0 and later |
 
 Other Cassandra and Prometheus versions will be tested for compatibility in the future.
@@ -54,10 +65,10 @@ Prometheus metrics will now be available at <http://localhost:9500/metrics>.
 In this mode metrics will be queried via JMX which will incur a performance overhead.
 The standalone mode was originally designed to assist with benchmarking and development of the exporter.
 
-The set of metrics available should be identical to that of the agent.
+The set of metrics available is close to that of the agent -- Gossiper related metrics are unavailable as these aren't readily available over JMX.
 
 Currently some additional metadata labels, such as the table type (table, index, view, etc) attached to the `cassandra_table_*` metrics, are
-not available.
+not available (this feature has yet to be written).
 
 
 ### Prometheus Configuration
@@ -69,11 +80,12 @@ Configure Prometheus to scrape the endpoint by adding the following to `promethe
       
       - job_name: 'cassandra'
         static_configs:
-          - targets: ['<cassandra node IP>:9500']
+          - targets: ['<cassandra node IP>:9500', '<cassandra node IP>:9500', '<cassandra node IP>:9500', ...]
 
 See the [Prometheus documentation](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#%3Cscrape_config%3E) for more details on configuring scrape targets.
 
-To view the raw, plain text metrics (in the Prometheus text exposition format), request the endpoint with a HTTP client such as a browser or cURL.
+To view the raw, plain text metrics (in the Prometheus text exposition format), request the endpoint
+(by default, <http://localhost:9500/metrics>) with a HTTP client such as a browser or cURL.
 
 Experimental JSON output is also provided if the `Accept: application/json` header or `?x-accept=application/json` URL parameter is specified.
 The format/structure of the JSON output is subject to change.
@@ -83,7 +95,8 @@ The format/structure of the JSON output is subject to change.
 
 The available command line options may be seen by passing `-h`/`--help`:
 
-    Usage: cassandra-exporter [-hV] [--no-global-labels]
+    Usage: cassandra-exporter-standalone [-hV] [--enable-per-thread-cpu-times]
+                                         [--no-fast-float] [--no-global-labels]
                                          [--family-help=VALUE]
                                          [--jmx-password=PASSWORD]
                                          [--jmx-service-url=URL] [--jmx-user=NAME]
@@ -96,7 +109,9 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   'datacenter', 'rack'. The default is to include all
                                   global labels. To disable all global labels use
                                   --no-global-labels.
-          --no-global-labels    Disable all global labels.
+          --enable-per-thread-cpu-times
+                                Collect per-thread CPU times, where each thread gets its
+                                  own time-series. (EXPERIMENTAL)
       -e, --exclude=EXCLUSION...
                                 Exclude a metric family or MBean from exposition.
                                   EXCLUSION may be the full name of a metric family
@@ -110,6 +125,8 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   prefixed with '#' are considered comments and are
                                   ignored. This option may be specified more than once
                                   to define multiple exclusions.
+          --no-fast-float       Disable the use of fast float -> ascii conversion.
+          --no-global-labels    Disable all global labels.
       -l, --listen=[ADDRESS][:PORT]
                                 Listen address (and optional port). ADDRESS may be a
                                   hostname, IPv4 dotted or decimal address, or IPv6
@@ -137,6 +154,7 @@ The available command line options may be seen by passing `-h`/`--help`:
                                 The JMX authentication password.
       -h, --help                Show this help message and exit.
       -V, --version             Print version information and exit.
+
 
 Options may also be provided via an `@`-file:
     
@@ -286,10 +304,6 @@ See the [project issue tracker](https://github.com/zegelin/cassandra-exporter/is
     
     The format writer was complicated and we didn't want to add dependencies on a templating library (e.g. Freemarker) to make it simpler.
     Instead the JSON format writer has been improved and optimized with the intent that the data could be consumed by simple static Javascript webapp. 
-
-- JVM metrics
-
-    Future versions should add support for collecting and exporting JVM metrics (memory, GC pause times, etc).
 
 - Add some example queries
 - Add Grafana dashboard templates

@@ -4,10 +4,8 @@ import com.codahale.metrics.Counting;
 import com.codahale.metrics.Metric;
 import com.codahale.metrics.Sampling;
 import com.codahale.metrics.Snapshot;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
 import com.zegelin.jmx.NamedObject;
-import com.zegelin.prometheus.domain.Quantile;
+import com.zegelin.prometheus.domain.Interval;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxHistogramMBean;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxTimerMBean;
@@ -16,6 +14,7 @@ import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 @SuppressWarnings("Duplicates")
 public class CassandraMetricsUtilities {
@@ -64,15 +63,15 @@ public class CassandraMetricsUtilities {
             }
 
             @Override
-            public Map<Quantile, Float> getQuantiles() {
-                return  ImmutableMap.<Quantile, Float>builder()
-                        .put(Quantile.Q_50, (float) timer.get50thPercentile())
-                        .put(Quantile.Q_75, (float) timer.get75thPercentile())
-                        .put(Quantile.Q_95, (float) timer.get95thPercentile())
-                        .put(Quantile.Q_98, (float) timer.get98thPercentile())
-                        .put(Quantile.Q_99, (float) timer.get99thPercentile())
-                        .put(Quantile.Q_999, (float) timer.get999thPercentile())
-                        .build();
+            public Stream<Interval> getIntervals() {
+                return Stream.of(
+                        new Interval(Interval.Quantile.P_50, (float) timer.get50thPercentile()),
+                        new Interval(Interval.Quantile.P_75, (float) timer.get75thPercentile()),
+                        new Interval(Interval.Quantile.P_95, (float) timer.get95thPercentile()),
+                        new Interval(Interval.Quantile.P_98, (float) timer.get98thPercentile()),
+                        new Interval(Interval.Quantile.P_99, (float) timer.get99thPercentile()),
+                        new Interval(Interval.Quantile.P_99_9, (float) timer.get999thPercentile())
+                );
             }
         };
     }
@@ -85,18 +84,19 @@ public class CassandraMetricsUtilities {
             }
 
             @Override
-            public Map<Quantile, Float> getQuantiles() {
-                return  ImmutableMap.<Quantile, Float>builder()
-                        .put(Quantile.Q_50, (float) histogram.get50thPercentile())
-                        .put(Quantile.Q_75, (float) histogram.get75thPercentile())
-                        .put(Quantile.Q_95, (float) histogram.get95thPercentile())
-                        .put(Quantile.Q_98, (float) histogram.get98thPercentile())
-                        .put(Quantile.Q_99, (float) histogram.get99thPercentile())
-                        .put(Quantile.Q_999, (float) histogram.get999thPercentile())
-                        .build();
+            public Stream<Interval> getIntervals() {
+                return Stream.of(
+                        new Interval(Interval.Quantile.P_50, (float) histogram.get50thPercentile()),
+                        new Interval(Interval.Quantile.P_75, (float) histogram.get75thPercentile()),
+                        new Interval(Interval.Quantile.P_95, (float) histogram.get95thPercentile()),
+                        new Interval(Interval.Quantile.P_98, (float) histogram.get98thPercentile()),
+                        new Interval(Interval.Quantile.P_99, (float) histogram.get99thPercentile()),
+                        new Interval(Interval.Quantile.P_99_9, (float) histogram.get999thPercentile())
+                );
             }
         };
     }
+
 
     static <X extends Sampling & Counting> SamplingCounting adapt(final X metric) {
         return new SamplingCounting() {
@@ -106,10 +106,10 @@ public class CassandraMetricsUtilities {
             }
 
             @Override
-            public Map<Quantile, Float> getQuantiles() {
+            public Stream<Interval> getIntervals() {
                 final Snapshot snapshot = metric.getSnapshot();
 
-                return Maps.toMap(Quantile.STANDARD_QUANTILES, q -> (float) snapshot.getValue(q.value));
+                return Interval.asIntervals(Interval.Quantile.STANDARD_PERCENTILES, q -> (float) snapshot.getValue(q.value));
             }
         };
     }

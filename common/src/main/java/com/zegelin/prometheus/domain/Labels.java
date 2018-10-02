@@ -11,11 +11,21 @@ import java.util.Map;
 public final class Labels extends ForwardingMap<String, String> {
     private final ImmutableMap<String, String> labels;
     private final ByteBuf plainTextFormatUTF8EncodedByteBuf, jsonFormatUTF8EncodedByteBuf;
+    private final boolean isEmpty;
 
     public Labels(final Map<String, String> labels) {
         this.labels = ImmutableMap.copyOf(labels);
+        this.isEmpty = this.labels.isEmpty();
         this.plainTextFormatUTF8EncodedByteBuf = TextFormatChunkedInput.formatLabels(labels);
         this.jsonFormatUTF8EncodedByteBuf = JsonFormatChunkedInput.formatLabels(labels);
+    }
+
+    public static Labels of(final String key, final String value) {
+        return new Labels(ImmutableMap.of(key, value));
+    }
+
+    public static Labels of() {
+        return new Labels(ImmutableMap.of());
     }
 
     @Override
@@ -23,6 +33,10 @@ public final class Labels extends ForwardingMap<String, String> {
         return labels;
     }
 
+    @Override
+    public boolean isEmpty() {
+        return isEmpty;
+    }
 
     public ByteBuf asPlainTextFormatUTF8EncodedByteBuf() {
         return plainTextFormatUTF8EncodedByteBuf;

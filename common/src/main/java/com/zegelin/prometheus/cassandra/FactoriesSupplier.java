@@ -1,17 +1,23 @@
 package com.zegelin.prometheus.cassandra;
 
+import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.zegelin.function.FloatFloatFunction;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector.Factory;
+import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
 import com.zegelin.prometheus.cassandra.collector.FailureDetectorMBeanMetricFamilyCollector;
 import com.zegelin.prometheus.cassandra.collector.GossiperMBeanMetricFamilyCollector;
 import com.zegelin.prometheus.cassandra.collector.LatencyMetricGroupSummaryCollector;
+import com.zegelin.prometheus.cassandra.collector.StorageServiceMBeanMetricFamilyCollector;
 import com.zegelin.prometheus.cassandra.collector.dynamic.FunctionalMetricFamilyCollector;
+import com.zegelin.prometheus.cassandra.collector.jvm.*;
 import com.zegelin.prometheus.domain.Labels;
 
 import javax.management.*;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
@@ -22,13 +28,6 @@ import static com.zegelin.prometheus.cassandra.CollectorFunctions.*;
 
 @SuppressWarnings("SameParameterValue")
 public class FactoriesSupplier implements Supplier<List<Factory>> {
-    private static final Function<Float, Float> MILLISECONDS_TO_SECONDS = (f -> f / 1.0E3f);
-    private static final Function<Float, Float> MICROSECONDS_TO_SECONDS = (f -> f / 1.0E6f);
-
-    private static final Function<Float, Float> NEG1_TO_NAN = (f -> (f == -1 ? Float.NaN : f));
-
-    private static final Function<Float, Float> PERCENT_TO_RATIO = (f -> f / 100.f);
-
     /**
      * A builder of {@see MBeanGroupMetricFamilyCollector.Factory}s
      */
@@ -99,9 +98,11 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     }
 
     private final MetadataFactory metadataFactory;
+    private final boolean perThreadTimingEnabled;
 
-    public FactoriesSupplier(final MetadataFactory metadataFactory) {
+    public FactoriesSupplier(final MetadataFactory metadataFactory, final HarvesterOptions options) {
         this.metadataFactory = metadataFactory;
+        this.perThreadTimingEnabled = options.perThreadTimingEnabled;
     }
 
 
@@ -356,7 +357,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         return (name, help, labels, mBean) -> {
             final NamedObject<SamplingCounting> samplingCountingNamedObject = CassandraMetricsUtilities.jmxTimerMBeanAsSamplingCounting(mBean);
 
-            return new FunctionalMetricFamilyCollector<>(name, help, ImmutableMap.of(labels, samplingCountingNamedObject), samplingAndCountingAsSummary(MICROSECONDS_TO_SECONDS));
+            return new FunctionalMetricFamilyCollector<>(name, help, ImmutableMap.of(labels, samplingCountingNamedObject), samplingAndCountingAsSummary(MetricValueConversionFunctions::microsecondsToSeconds));
         };
     }
 
@@ -368,17 +369,16 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         };
     }
 
-    private static <T> FactoryBuilder.CollectorConstructor asCollectorConstructor(final FunctionalMetricFamilyCollector.CollectorFunction<T> function) {
+    private static <T> FactoryBuilder.CollectorConstructor functionalCollector(final FunctionalMetricFamilyCollector.CollectorFunction<T> function) {
         return (final String name, final String help, final Labels labels, final NamedObject<?> mBean) ->
                 new FunctionalMetricFamilyCollector<>(name, help, ImmutableMap.of(labels, mBean.<T>cast()), function);
     }
 
-//    private static <T> CollectorFunction<T> cache(final CollectorFunction<T> fn) {
-//        return labeledObjectGroup -> {
-//            return Suppliers.memoizeWithExpiration(() -> fn.apply(labeledObjectGroup), 10, TimeUnit.SECONDS).;
-//        }
-//
-//    }
+    private static <T> FunctionalMetricFamilyCollector.CollectorFunction<T> cache(final FunctionalMetricFamilyCollector.CollectorFunction<T> fn, final long duration, final TimeUnit unit) {
+        return labeledObjectGroup -> {
+            return Suppliers.memoizeWithExpiration(() -> fn.apply(labeledObjectGroup), duration, unit).get();
+        };
+    }
 
 
     @Override
@@ -387,34 +387,42 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         builder.add(FailureDetectorMBeanMetricFamilyCollector.FACTORY);
         builder.add(GossiperMBeanMetricFamilyCollector.FACTORY);
+        builder.add(StorageServiceMBeanMetricFamilyCollector.FACTORY);
+
+        builder.add(MemoryPoolMXBeanMetricFamilyCollector.FACTORY);
+        builder.add(GarbageCollectorMXBeanMetricFamilyCollector.FACTORY);
+        builder.add(BufferPoolMXBeanMetricFamilyCollector.FACTORY);
+        builder.add(OperatingSystemMXBeanMetricFamilyCollector.FACTORY);
+        builder.add(ThreadMXBeanMetricFamilyCollector.factory(perThreadTimingEnabled));
+
 
         // org.apache.cassandra.metrics.BufferPoolMetrics
         {
-            builder.add(bufferPoolMetricFactory(asCollectorConstructor(meterAsCounter()), "Misses", "misses_total", "Total number of requests to the BufferPool requiring allocation of a new ByteBuffer."));
-            builder.add(bufferPoolMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "Size", "size_bytes", "Current size in bytes of the global BufferPool."));
+            builder.add(bufferPoolMetricFactory(functionalCollector(meterAsCounter()), "Misses", "misses_total", "Total number of requests to the BufferPool requiring allocation of a new ByteBuffer."));
+            builder.add(bufferPoolMetricFactory(functionalCollector(numericGaugeAsGauge()), "Size", "size_bytes", "Current size in bytes of the global BufferPool."));
         }
 
 
         // org.apache.cassandra.metrics.CQLMetrics
         {
-            builder.add(cqlMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "PreparedStatementsCount", "prepared_statements", "The current number of CQL and Thrift prepared statements in the statement cache."));
-            builder.add(cqlMetricFactory(asCollectorConstructor(counterAsCounter()), "PreparedStatementsEvicted", "prepared_statements_evicted_total", "Total number of CQL and Thrift prepared statements evicted from the statement cache."));
-            builder.add(cqlMetricFactory(asCollectorConstructor(counterAsCounter()), "PreparedStatementsExecuted", "statements_executed_total", "Total number of CQL statements executed.", ImmutableMap.of("statement_type", "prepared")));
-            builder.add(cqlMetricFactory(asCollectorConstructor(counterAsCounter()), "RegularStatementsExecuted", "statements_executed_total", "Total number of CQL statements executed.", ImmutableMap.of("statement_type", "regular")));
+            builder.add(cqlMetricFactory(functionalCollector(numericGaugeAsGauge()), "PreparedStatementsCount", "prepared_statements", "The current number of CQL and Thrift prepared statements in the statement cache."));
+            builder.add(cqlMetricFactory(functionalCollector(counterAsCounter()), "PreparedStatementsEvicted", "prepared_statements_evicted_total", "Total number of CQL and Thrift prepared statements evicted from the statement cache."));
+            builder.add(cqlMetricFactory(functionalCollector(counterAsCounter()), "PreparedStatementsExecuted", "statements_executed_total", "Total number of CQL statements executed.", ImmutableMap.of("statement_type", "prepared")));
+            builder.add(cqlMetricFactory(functionalCollector(counterAsCounter()), "RegularStatementsExecuted", "statements_executed_total", "Total number of CQL statements executed.", ImmutableMap.of("statement_type", "regular")));
         }
 
 
         // org.apache.cassandra.metrics.CacheMetrics/org.apache.cassandra.metrics.CacheMissMetrics
         {
             // common cache metrics
-            builder.add(cacheMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "Capacity", "capacity_bytes", null));
-            builder.add(cacheMetricFactory(asCollectorConstructor(meterAsCounter()), "Requests", "requests_total", null));
-            builder.add(cacheMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "Size", "estimated_size_bytes", null));
-            builder.add(cacheMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "Entries", "entries", null));
+            builder.add(cacheMetricFactory(functionalCollector(numericGaugeAsGauge()), "Capacity", "capacity_bytes", null));
+            builder.add(cacheMetricFactory(functionalCollector(meterAsCounter()), "Requests", "requests_total", null));
+            builder.add(cacheMetricFactory(functionalCollector(numericGaugeAsGauge()), "Size", "estimated_size_bytes", null));
+            builder.add(cacheMetricFactory(functionalCollector(numericGaugeAsGauge()), "Entries", "entries", null));
 
             // TODO: somehow make hits/misses common across all caches?
             // org.apache.cassandra.metrics.CacheMetrics
-            builder.add(cacheMetricFactory(asCollectorConstructor(meterAsCounter()), "Hits", "hits_total", null));
+            builder.add(cacheMetricFactory(functionalCollector(meterAsCounter()), "Hits", "hits_total", null));
 
             // org.apache.cassandra.metrics.CacheMissMetrics
             // "Misses" -- ignored, as "MissLatency" also includes a total count
@@ -424,18 +432,18 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         // org.apache.cassandra.metrics.ClientMetrics
         {
-            builder.add(clientMetricFactory(asCollectorConstructor(meterAsCounter()), "AuthFailure", "authentication_failures_total", "Total number of failed client authentication requests."));
-            builder.add(clientMetricFactory(asCollectorConstructor(meterAsCounter()), "AuthSuccess", "authentication_successes_total", "Total number of successful client authentication requests."));
-            builder.add(clientMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "connectedNativeClients", "native_connections", "Current number of CQL connections."));
-            builder.add(clientMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "connectedThriftClients", "thrift_connections", "Current number of Thrift connections."));
+            builder.add(clientMetricFactory(functionalCollector(meterAsCounter()), "AuthFailure", "authentication_failures_total", "Total number of failed client authentication requests."));
+            builder.add(clientMetricFactory(functionalCollector(meterAsCounter()), "AuthSuccess", "authentication_successes_total", "Total number of successful client authentication requests."));
+            builder.add(clientMetricFactory(functionalCollector(numericGaugeAsGauge()), "connectedNativeClients", "native_connections", "Current number of CQL connections."));
+            builder.add(clientMetricFactory(functionalCollector(numericGaugeAsGauge()), "connectedThriftClients", "thrift_connections", "Current number of Thrift connections."));
         }
 
 
         // org.apache.cassandra.metrics.ClientRequestMetrics
         {
-            builder.add(clientRequestMetricFactory(asCollectorConstructor(meterAsCounter()), "Timeouts", "timeouts_total", "Total number of timeouts encountered (since server start)."));
-            builder.add(clientRequestMetricFactory(asCollectorConstructor(meterAsCounter()), "Unavailables", "unavailable_exceptions_total", "Total number of UnavailableExceptions thrown."));
-            builder.add(clientRequestMetricFactory(asCollectorConstructor(meterAsCounter()), "Failures", "failures_total", "Total number of failed requests."));
+            builder.add(clientRequestMetricFactory(functionalCollector(meterAsCounter()), "Timeouts", "timeouts_total", "Total number of timeouts encountered (since server start)."));
+            builder.add(clientRequestMetricFactory(functionalCollector(meterAsCounter()), "Unavailables", "unavailable_exceptions_total", "Total number of UnavailableExceptions thrown."));
+            builder.add(clientRequestMetricFactory(functionalCollector(meterAsCounter()), "Failures", "failures_total", "Total number of failed requests."));
 
             builder.add(clientRequestMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "Latency", "latency_seconds", "Request latency."));
             builder.add(clientRequestMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "TotalLatency", "latency_seconds", "Total request duration."));
@@ -444,25 +452,25 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         // org.apache.cassandra.metrics.CASClientRequestMetrics
         {
-            builder.add(clientRequestMetricFactory(asCollectorConstructor(counterAsCounter()), "ConditionNotMet", "cas_write_precondition_not_met_total", "Total number of transaction preconditions did not match current values (since server start).")); // TODO: name
+            builder.add(clientRequestMetricFactory(functionalCollector(counterAsCounter()), "ConditionNotMet", "cas_write_precondition_not_met_total", "Total number of transaction preconditions did not match current values (since server start).")); // TODO: name
             builder.add(clientRequestMetricFactory(histogramAsSummaryCollectorConstructor(), "ContentionHistogram", "cas_contentions", ""));
-            builder.add(clientRequestMetricFactory(asCollectorConstructor(counterAsCounter()), "UnfinishedCommit", "cas_unfinished_commits_total", null));
+            builder.add(clientRequestMetricFactory(functionalCollector(counterAsCounter()), "UnfinishedCommit", "cas_unfinished_commits_total", null));
         }
 
 
         // org.apache.cassandra.metrics.ViewWriteMetrics
         {
-            builder.add(clientRequestMetricFactory(asCollectorConstructor(counterAsCounter()), "ViewReplicasAttempted", "view_replica_writes_attempted_total", null));
-            builder.add(clientRequestMetricFactory(asCollectorConstructor(counterAsCounter()), "ViewReplicasSuccess", "view_replica_writes_successful_total", null));
+            builder.add(clientRequestMetricFactory(functionalCollector(counterAsCounter()), "ViewReplicasAttempted", "view_replica_writes_attempted_total", null));
+            builder.add(clientRequestMetricFactory(functionalCollector(counterAsCounter()), "ViewReplicasSuccess", "view_replica_writes_successful_total", null));
             builder.add(clientRequestMetricFactory(timerAsSummaryCollectorConstructor(), "ViewWriteLatency", "view_write_latency_seconds", null));
         }
 
 
         // org.apache.cassandra.metrics.CommitLogMetrics
         {
-            builder.add(commitLogMetricFactory(asCollectorConstructor(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", "Total number of commit log messages written (since server start)."));
-            builder.add(commitLogMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "PendingTasks", "pending_tasks", "Number of commit log messages written not yet fsync’d."));
-            builder.add(commitLogMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "TotalCommitLogSize", "size_bytes", "Current size used by all commit log segments."));
+            builder.add(commitLogMetricFactory(functionalCollector(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", "Total number of commit log messages written (since server start)."));
+            builder.add(commitLogMetricFactory(functionalCollector(numericGaugeAsGauge()), "PendingTasks", "pending_tasks", "Number of commit log messages written not yet fsync’d."));
+            builder.add(commitLogMetricFactory(functionalCollector(numericGaugeAsGauge()), "TotalCommitLogSize", "size_bytes", "Current size used by all commit log segments."));
             builder.add(commitLogMetricFactory(timerAsSummaryCollectorConstructor(), "WaitingOnSegmentAllocation", "segment_allocation_latency_seconds", null));
             builder.add(commitLogMetricFactory(timerAsSummaryCollectorConstructor(), "WaitingOnCommit", "commit_latency_seconds", null));
 
@@ -472,25 +480,25 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         // org.apache.cassandra.metrics.ConnectionMetrics
         {
             // Large, Small, Gossip
-            builder.add(connectionMetric(asCollectorConstructor(numericGaugeAsGauge()), "*MessagePendingTasks", "pending_tasks", null));
-            builder.add(connectionMetric(asCollectorConstructor(numericGaugeAsCounter()), "*MessageCompletedTasks", "completed_tasks_total", null));
-            builder.add(connectionMetric(asCollectorConstructor(numericGaugeAsCounter()), "*MessageDroppedTasks", "dropped_tasks_total", null));
-            builder.add(connectionMetric(asCollectorConstructor(meterAsCounter()), "Timeouts", "timeouts_total", null));
+            builder.add(connectionMetric(functionalCollector(numericGaugeAsGauge()), "*MessagePendingTasks", "pending_tasks", null));
+            builder.add(connectionMetric(functionalCollector(numericGaugeAsCounter()), "*MessageCompletedTasks", "completed_tasks_total", null));
+            builder.add(connectionMetric(functionalCollector(numericGaugeAsCounter()), "*MessageDroppedTasks", "dropped_tasks_total", null));
+            builder.add(connectionMetric(functionalCollector(meterAsCounter()), "Timeouts", "timeouts_total", null));
         }
 
 
         // org.apache.cassandra.metrics.CompactionMetrics
         {
-            builder.add(compactionMetric(asCollectorConstructor(counterAsCounter()),"BytesCompacted", "bytes_compacted_total", "Total number of bytes compacted (since server start)."));
-            builder.add(compactionMetric(asCollectorConstructor(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", "Total number of completed compaction tasks (since server start)."));
-            builder.add(compactionMetric(asCollectorConstructor(numericGaugeAsGauge()), "PendingTasks", "pending_tasks", "Estimated number of compactions remaining."));
-            builder.add(compactionMetric(asCollectorConstructor(meterAsCounter()), "TotalCompactionsCompleted", "completed_total", "Total number of compactions (since server start)."));
+            builder.add(compactionMetric(functionalCollector(counterAsCounter()),"BytesCompacted", "bytes_compacted_total", "Total number of bytes compacted (since server start)."));
+            builder.add(compactionMetric(functionalCollector(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", "Total number of completed compaction tasks (since server start)."));
+            builder.add(compactionMetric(functionalCollector(numericGaugeAsGauge()), "PendingTasks", "pending_tasks", "Estimated number of compactions remaining."));
+            builder.add(compactionMetric(functionalCollector(meterAsCounter()), "TotalCompactionsCompleted", "completed_total", "Total number of compactions (since server start)."));
         }
 
 
         // org.apache.cassandra.metrics.DroppedMessageMetrics
         {
-            builder.add(droppedMessagesMetric(asCollectorConstructor(meterAsCounter()), "Dropped", "total", null));
+            builder.add(droppedMessagesMetric(functionalCollector(meterAsCounter()), "Dropped", "total", null));
             builder.add(droppedMessagesMetric(timerAsSummaryCollectorConstructor(), "InternalDroppedLatency", "internal_latency_seconds", null));
             builder.add(droppedMessagesMetric(timerAsSummaryCollectorConstructor(), "CrossNodeDroppedLatency", "cross_node_latency_seconds", null));
         }
@@ -519,34 +527,34 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         // org.apache.cassandra.metrics.StorageMetrics
         {
-            builder.add(storageMetric(asCollectorConstructor(counterAsCounter()), "Exceptions", "exceptions_total", null));
-            builder.add(storageMetric(asCollectorConstructor(counterAsGauge()), "Load", "load_bytes", null));
-            builder.add(storageMetric(asCollectorConstructor(counterAsCounter()), "TotalHints", "hints_total", null));
-            builder.add(storageMetric(asCollectorConstructor(counterAsCounter()), "TotalHintsInProgress", "hints_in_progress", null));
+            builder.add(storageMetric(functionalCollector(counterAsCounter()), "Exceptions", "exceptions_total", null));
+            builder.add(storageMetric(functionalCollector(counterAsGauge()), "Load", "load_bytes", null));
+            builder.add(storageMetric(functionalCollector(counterAsCounter()), "TotalHints", "hints_total", null));
+            builder.add(storageMetric(functionalCollector(counterAsCounter()), "TotalHintsInProgress", "hints_in_progress", null));
         }
 
 
         // org.apache.cassandra.metrics.TableMetrics (includes secondary indexes and MVs)
         {
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "MemtableOnHeapSize", "memory_used_bytes", null, ImmutableMap.of("region", "on_heap", "pool", "memtable")));
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "MemtableOffHeapSize", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "memtable")));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "MemtableOnHeapSize", "memory_used_bytes", null, ImmutableMap.of("region", "on_heap", "pool", "memtable")));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "MemtableOffHeapSize", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "memtable")));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "MemtableLiveDataSize", "memtable_live_bytes", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "MemtableLiveDataSize", "memtable_live_bytes", null));
 
             // AllMemtables* just include the secondary-index table stats... Those are already collected separately
-//            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "AllMemtablesHeapSize", "memory_used_bytes", null));
-//            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "AllMemtablesOffHeapSize", null, null));
-//            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "AllMemtablesLiveDataSize", null, null));
+//            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "AllMemtablesHeapSize", "memory_used_bytes", null));
+//            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "AllMemtablesOffHeapSize", null, null));
+//            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "AllMemtablesLiveDataSize", null, null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "MemtableColumnsCount", "memtable_columns", null));
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsCounter()), "MemtableSwitchCount", "memtable_switches", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "MemtableColumnsCount", "memtable_columns", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsCounter()), "MemtableSwitchCount", "memtable_switches", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge(NEG1_TO_NAN)), "CompressionRatio", "compression_ratio", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge(MetricValueConversionFunctions::neg1ToNaN)), "CompressionRatio", "compression_ratio", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(histogramGaugeAsSummary()), "EstimatedPartitionSizeHistogram", "estimated_partition_size_bytes", null));
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge(NEG1_TO_NAN)), "EstimatedPartitionCount", "estimated_partitions", null));
+            builder.add(tableMetricFactory(functionalCollector(histogramGaugeAsSummary()), "EstimatedPartitionSizeHistogram", "estimated_partition_size_bytes", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge(MetricValueConversionFunctions::neg1ToNaN)), "EstimatedPartitionCount", "estimated_partitions", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(histogramGaugeAsSummary()), "EstimatedColumnCountHistogram", "estimated_columns", null));
+            builder.add(tableMetricFactory(functionalCollector(histogramGaugeAsSummary()), "EstimatedColumnCountHistogram", "estimated_columns", null));
 
             builder.add(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "SSTablesPerReadHistogram", "sstables_per_read", null));
 //
@@ -559,33 +567,33 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
             builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "WriteLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "write")));
             builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "WriteTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "write")));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsGauge()), "PendingFlushes", "pending_flushes", null));
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsCounter()), "BytesFlushed", "flushed_bytes_total", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "PendingFlushes", "pending_flushes", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsCounter()), "BytesFlushed", "flushed_bytes_total", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsCounter()), "CompactionBytesWritten", "compaction_bytes_written_total", null));
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "PendingCompactions", "estimated_pending_compactions", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsCounter()), "CompactionBytesWritten", "compaction_bytes_written_total", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "PendingCompactions", "estimated_pending_compactions", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "LiveSSTableCount", "live_sstables", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "LiveSSTableCount", "live_sstables", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsGauge()), "LiveDiskSpaceUsed", "live_disk_space_bytes", null));
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsGauge()), "TotalDiskSpaceUsed", "disk_space_bytes", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "LiveDiskSpaceUsed", "live_disk_space_bytes", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "TotalDiskSpaceUsed", "disk_space_bytes", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "MaxPartitionSize", "partition_size_maximum_bytes", null));
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "MeanPartitionSize", "partition_size_mean_bytes", null));
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "MinPartitionSize", "partition_size_minimum_bytes", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "MaxPartitionSize", "partition_size_maximum_bytes", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "MeanPartitionSize", "partition_size_mean_bytes", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "MinPartitionSize", "partition_size_minimum_bytes", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsCounter()), "BloomFilterFalsePositives", "bloom_filter_false_positives_total", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsCounter()), "BloomFilterFalsePositives", "bloom_filter_false_positives_total", null));
             // "RecentBloomFilterFalsePositives" -- ignored. returns the value since the last metric read
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "BloomFilterFalseRatio", "bloom_filter_false_ratio", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "BloomFilterFalseRatio", "bloom_filter_false_ratio", null));
             // "RecentBloomFilterFalseRatio" -- ignored. returns the value since the last metric read (same as "RecentBloomFilterFalsePositives")
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "BloomFilterDiskSpaceUsed", "bloom_filter_disk_space_used_bytes", null));
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "BloomFilterOffHeapMemoryUsed", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "bloom_filter")));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "BloomFilterDiskSpaceUsed", "bloom_filter_disk_space_used_bytes", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "BloomFilterOffHeapMemoryUsed", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "bloom_filter")));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "IndexSummaryOffHeapMemoryUsed", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "index_summary")));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "IndexSummaryOffHeapMemoryUsed", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "index_summary")));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "CompressionMetadataOffHeapMemoryUsed", "compression_metadata_offheap_bytes", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "CompressionMetadataOffHeapMemoryUsed", "compression_metadata_offheap_bytes", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "KeyCacheHitRate", "key_cache_hit_ratio", null)); // it'd be nice if the individual requests/hits/misses values were exposed
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "KeyCacheHitRate", "key_cache_hit_ratio", null)); // it'd be nice if the individual requests/hits/misses values were exposed
 
             builder.add(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "TombstoneScannedHistogram", "tombstones_scanned", null));
             builder.add(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "LiveScannedHistogram", "live_rows_scanned", null));
@@ -595,11 +603,11 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
             builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewLockAcquireTime", "view_lock_acquisition_seconds", null));
             builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewReadTime", "view_read_seconds", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge()), "SnapshotsSize", "snapshots_size_total_bytes", null)); // TODO: expensive -- cache. does a walk of the filesystem
+            builder.add(tableMetricFactory(functionalCollector(cache(numericGaugeAsGauge(), 1, TimeUnit.MINUTES)), "SnapshotsSize", "snapshots_size_total_bytes", null)); // TODO: maybe make configurable
 
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsGauge()), "RowCacheHitOutOfRange", "row_cache_misses", null, ImmutableMap.of("miss_type", "out_of_range")));
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsGauge()), "RowCacheHit", "row_cache_hits", null));
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsGauge()), "RowCacheMiss", "row_cache_misses", null, ImmutableMap.of("miss_type", "miss")));
+            builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "RowCacheHitOutOfRange", "row_cache_misses", null, ImmutableMap.of("miss_type", "out_of_range")));
+            builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "RowCacheHit", "row_cache_hits", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "RowCacheMiss", "row_cache_misses", null, ImmutableMap.of("miss_type", "miss")));
 
             builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasPrepareLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_prepare")));
             builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasPrepareTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_prepare")));
@@ -610,26 +618,26 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
             builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasCommitLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_commit")));
             builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasCommitTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_commit")));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(numericGaugeAsGauge(PERCENT_TO_RATIO)), "PercentRepaired", "repaired_ratio", null));
+            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge(MetricValueConversionFunctions::percentToRatio)), "PercentRepaired", "repaired_ratio", null));
 
             builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "CoordinatorReadLatency", "coordinator_latency_seconds", null, ImmutableMap.of("operation", "read")));
             builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "CoordinatorScanLatency", "coordinator_latency_seconds", null, ImmutableMap.of("operation", "scan")));
 
             builder.add(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "WaitingOnFreeMemtableSpace", "free_memtable_latency_seconds", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsCounter()), "DroppedMutations", "dropped_mutations_total", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsCounter()), "DroppedMutations", "dropped_mutations_total", null));
 
-            builder.add(tableMetricFactory(asCollectorConstructor(counterAsCounter()), "SpeculativeRetries", "speculative_retries_total", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsCounter()), "SpeculativeRetries", "speculative_retries_total", null));
         }
 
 
         // org.apache.cassandra.metrics.ThreadPoolMetrics
         {
-            builder.add(threadPoolMetric(asCollectorConstructor(numericGaugeAsGauge()), "ActiveTasks", "active_tasks", null));
-            builder.add(threadPoolMetric(asCollectorConstructor(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", null));
-            builder.add(threadPoolMetric(asCollectorConstructor(counterAsCounter()), "TotalBlockedTasks", "blocked_tasks_total", null));
-            builder.add(threadPoolMetric(asCollectorConstructor(counterAsGauge()), "CurrentlyBlockedTasks", "blocked_tasks", null));
-            builder.add(threadPoolMetric(asCollectorConstructor(numericGaugeAsGauge()), "MaxPoolSize", "maximum_tasks", null));
+            builder.add(threadPoolMetric(functionalCollector(numericGaugeAsGauge()), "ActiveTasks", "active_tasks", null));
+            builder.add(threadPoolMetric(functionalCollector(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", null));
+            builder.add(threadPoolMetric(functionalCollector(counterAsCounter()), "TotalBlockedTasks", "blocked_tasks_total", null));
+            builder.add(threadPoolMetric(functionalCollector(counterAsGauge()), "CurrentlyBlockedTasks", "blocked_tasks", null));
+            builder.add(threadPoolMetric(functionalCollector(numericGaugeAsGauge()), "MaxPoolSize", "maximum_tasks", null));
         }
 
 

@@ -1,17 +1,17 @@
 package com.zegelin.prometheus.cassandra;
 
+import com.google.common.collect.ImmutableList;
 import com.sun.jmx.mbeanserver.JmxMBeanServer;
 import com.zegelin.jmx.DelegatingMBeanServerInterceptor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
 
 import javax.management.*;
 import java.lang.management.ManagementFactory;
-import java.util.Set;
+import java.lang.management.PlatformManagedObject;
+import java.util.List;
+import java.util.stream.Collectors;
 
 class MBeanServerInterceptorHarvester extends Harvester {
-    private static final Logger logger = LoggerFactory.getLogger(MBeanServerInterceptorHarvester.class);
-
     class MBeanServerInterceptor extends DelegatingMBeanServerInterceptor {
         MBeanServerInterceptor(final MBeanServer delegate) {
             super(delegate);
@@ -41,10 +41,19 @@ class MBeanServerInterceptorHarvester extends Harvester {
         }
     }
 
-    MBeanServerInterceptorHarvester(final Set<Exclusion> exclusions, final Set<GlobalLabel> globalLabels) {
-        super(new FactoriesSupplier(new InternalMetadataFactory()), exclusions, globalLabels);
+    MBeanServerInterceptorHarvester(final HarvesterOptions options) {
+        super(new InternalMetadataFactory(), options);
 
+        registerPlatformMXBeans();
         registerMBeanServerInterceptor();
+
+    }
+
+    private void registerPlatformMXBeans() {
+        ManagementFactory.getPlatformManagementInterfaces().stream()
+                .flatMap(i -> ManagementFactory.getPlatformMXBeans(i).stream())
+                .distinct()
+                .forEach(mxBean -> registerMBean(mxBean, mxBean.getObjectName()));
     }
 
     private void registerMBeanServerInterceptor() {

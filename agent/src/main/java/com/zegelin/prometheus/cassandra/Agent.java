@@ -4,13 +4,14 @@ import com.sun.jmx.mbeanserver.JmxMBeanServerBuilder;
 import com.zegelin.agent.AgentArgumentParser;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
 import com.zegelin.prometheus.cli.HttpServerOptions;
-
 import com.zegelin.prometheus.netty.Server;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 
-import javax.management.*;
+import javax.management.InstanceAlreadyExistsException;
+import javax.management.MBeanRegistrationException;
+import javax.management.NotCompliantMBeanException;
 import java.io.IOException;
 import java.lang.instrument.Instrumentation;
 import java.util.List;
@@ -28,7 +29,7 @@ public class Agent implements Callable<Void> {
     public Void call() throws Exception {
         System.setProperty("javax.management.builder.initial", JmxMBeanServerBuilder.class.getCanonicalName());
 
-        final MBeanServerInterceptorHarvester harvester = new MBeanServerInterceptorHarvester(harvesterOptions.exclusions, harvesterOptions.globalLabels);
+        final MBeanServerInterceptorHarvester harvester = new MBeanServerInterceptorHarvester(harvesterOptions);
 
         Server.start(httpServerOptions.listenAddresses, harvester, httpServerOptions.helpExposition);
 

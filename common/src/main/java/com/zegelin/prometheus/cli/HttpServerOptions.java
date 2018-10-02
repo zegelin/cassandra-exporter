@@ -1,10 +1,8 @@
 package com.zegelin.prometheus.cli;
 
 import com.google.common.collect.ImmutableList;
-
 import com.zegelin.picocli.InetSocketAddressTypeConverter;
 import com.zegelin.prometheus.netty.HttpHandler;
-import picocli.CommandLine;
 import picocli.CommandLine.Option;
 
 import java.net.InetAddress;
