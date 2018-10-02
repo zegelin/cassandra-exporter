@@ -2,6 +2,8 @@
 
 *Project Status: beta*
 
+Releases are currently available at <https://github.com/zegelin/cassandra-exporter>
+
 
 ## Introduction
 
