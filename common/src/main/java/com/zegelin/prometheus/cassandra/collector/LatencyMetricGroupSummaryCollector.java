@@ -4,9 +4,9 @@ import com.google.common.collect.ImmutableMap;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector;
 import com.zegelin.prometheus.cassandra.SamplingCounting;
+import com.zegelin.prometheus.domain.Interval;
 import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
-import com.zegelin.prometheus.domain.Quantile;
 import com.zegelin.prometheus.domain.SummaryMetricFamily;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxCounterMBean;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxTimerMBean;
@@ -97,7 +97,7 @@ public class LatencyMetricGroupSummaryCollector implements MBeanGroupMetricFamil
     }
 
     @Override
-    public Stream<? extends MetricFamily<?>> collect() {
+    public Stream<MetricFamily> collect() {
         final Stream<SummaryMetricFamily.Summary> summaryStream = latencyMetricGroups.entrySet().stream()
                 .map(e -> new Object() {
                     final Labels labels = e.getKey();
@@ -108,7 +108,7 @@ public class LatencyMetricGroupSummaryCollector implements MBeanGroupMetricFamil
                     final float count = e.latencyMetricGroup.latencyTimer.object.getCount();
                     final float sum = e.latencyMetricGroup.totalLatencyCounter.object.getCount();
 
-                    final Map<Quantile, Float> quantiles = e.latencyMetricGroup.latencyTimer.object.getQuantiles();
+                    final Stream<Interval> quantiles = e.latencyMetricGroup.latencyTimer.object.getIntervals();
 
                     return new SummaryMetricFamily.Summary(e.labels, sum, count, quantiles);
                 });

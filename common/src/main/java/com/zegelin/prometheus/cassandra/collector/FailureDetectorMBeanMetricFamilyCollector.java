@@ -1,7 +1,5 @@
 package com.zegelin.prometheus.cassandra.collector;
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.zegelin.jmx.ObjectNames;
 import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector;
 import com.zegelin.prometheus.domain.GaugeMetricFamily;
@@ -22,9 +20,6 @@ public class FailureDetectorMBeanMetricFamilyCollector implements MBeanGroupMetr
     private static final Logger logger = LoggerFactory.getLogger(FailureDetectorMBeanMetricFamilyCollector.class);
 
     private static final ObjectName FAILURE_DETECTOR_MBEAN_NAME = ObjectNames.create("org.apache.cassandra.net:type=FailureDetector");
-
-    private static final Labels ENDPOINT_STATE_DOWN_LABELS = new Labels(ImmutableMap.of("state", "down"));
-    private static final Labels ENDPOINT_STATE_UP_LABELS = new Labels(ImmutableMap.of("state", "up"));
 
     public static final Factory FACTORY = mBean -> {
         if (!FAILURE_DETECTOR_MBEAN_NAME.apply(mBean.name))
@@ -48,8 +43,8 @@ public class FailureDetectorMBeanMetricFamilyCollector implements MBeanGroupMetr
     }
 
     @Override
-    public Stream<MetricFamily<?>> collect() {
-        final ImmutableSet.Builder<MetricFamily<?>> setBuilder = ImmutableSet.builder();
+    public Stream<MetricFamily> collect() {
+        final Stream.Builder<MetricFamily> streamBuilder = Stream.builder();
 
         // endpoint phi
         try {
@@ -57,23 +52,17 @@ public class FailureDetectorMBeanMetricFamilyCollector implements MBeanGroupMetr
             final Collection<CompositeData> endpointPhiValues = (Collection<CompositeData>) failureDetector.getPhiValues().values();
 
             final Stream<NumericMetric> phiMetricsStream = endpointPhiValues.stream().map(d -> {
-                final Labels labels = new Labels(ImmutableMap.of("endpoint", ((String) d.get("Endpoint")).substring(1)));
+                final Labels labels = Labels.of("endpoint", ((String) d.get("Endpoint")).substring(1));
 
                 return new NumericMetric(labels, ((Double) d.get("PHI")).floatValue());
             });
 
-            setBuilder.add(new GaugeMetricFamily("cassandra_endpoint_phi", null, phiMetricsStream));
+            streamBuilder.add(new GaugeMetricFamily("cassandra_endpoint_phi", null, phiMetricsStream));
 
         } catch (final OpenDataException e) {
             logger.warn("Unable to collect metric cassandra_endpoint_phi.", e);
         }
 
-        // up/down endpoint counts
-        setBuilder.add(new GaugeMetricFamily("cassandra_endpoints", null, Stream.of(
-                new NumericMetric(ENDPOINT_STATE_DOWN_LABELS, failureDetector.getDownEndpointCount()),
-                new NumericMetric(ENDPOINT_STATE_UP_LABELS, failureDetector.getUpEndpointCount())
-        )));
-
-        return setBuilder.build().stream();
+        return streamBuilder.build();
     }
 }

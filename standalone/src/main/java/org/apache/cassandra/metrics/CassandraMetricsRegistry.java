@@ -17,7 +17,7 @@
  */
 package org.apache.cassandra.metrics;
 
-import javax.management.*;
+import javax.management.ObjectName;
 
 
 public class CassandraMetricsRegistry {

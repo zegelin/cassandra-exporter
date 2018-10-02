@@ -1,6 +1,6 @@
 package com.zegelin.prometheus.cassandra;
 
-import com.datastax.driver.core.*;
+import com.datastax.driver.core.Metadata;
 
 import java.util.Optional;
 

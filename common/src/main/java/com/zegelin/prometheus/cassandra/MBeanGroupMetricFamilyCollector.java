@@ -32,7 +32,7 @@ public interface MBeanGroupMetricFamilyCollector {
     /**
      * @return a {@link Stream} of {@link MetricFamily}s that contain the metrics collected by this collector.
      */
-    Stream<? extends MetricFamily<?>> collect();
+    Stream<MetricFamily> collect();
 
 
     interface Factory {

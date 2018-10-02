@@ -5,7 +5,10 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.zegelin.prometheus.cassandra.Harvester;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -47,7 +50,7 @@ public class Server {
                 .setNameFormat("prometheus-netty-pool-%d")
                 .build();
 
-        final EventLoopGroup eventLoopGroup = new NioEventLoopGroup(0, threadFactory);
+        final EventLoopGroup eventLoopGroup = new NioEventLoopGroup(1, threadFactory);
 
         final ServerBootstrap bootstrap = new ServerBootstrap();
 

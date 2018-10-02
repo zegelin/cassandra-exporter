@@ -1,7 +1,6 @@
 package com.zegelin.netty;
 
 import com.google.common.io.ByteStreams;
-import com.zegelin.prometheus.netty.HttpHandler;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 

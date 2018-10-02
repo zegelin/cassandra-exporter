@@ -1,20 +1,19 @@
 package com.zegelin.prometheus.cassandra;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
-import org.apache.cassandra.gms.FailureDetectorMBean;
+import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
+import org.apache.cassandra.gms.GossiperMBean;
 import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
-import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.service.StorageServiceMBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.management.JMX;
-import javax.management.MBeanServerConnection;
-import javax.management.ObjectInstance;
-import javax.management.ObjectName;
-import java.util.Map;
+import javax.management.*;
+import java.lang.management.BufferPoolMXBean;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.OperatingSystemMXBean;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -29,8 +28,8 @@ public class JMXHarvester extends Harvester {
     @SuppressWarnings("FieldCanBeLocal")
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 
-    JMXHarvester(final MBeanServerConnection mBeanServerConnection, final Set<Exclusion> exclusions, final Set<GlobalLabel> globalLabels) {
-        super(new FactoriesSupplier(new RemoteMetadataFactory()), exclusions, globalLabels);
+    JMXHarvester(final MBeanServerConnection mBeanServerConnection, final HarvesterOptions options) {
+        super(new RemoteMetadataFactory(), options);
 
         this.mBeanServerConnection = mBeanServerConnection;
 
@@ -57,18 +56,40 @@ public class JMXHarvester extends Harvester {
             {
                 final Set<ObjectInstance> addedMBeans = Sets.difference(mBeans, currentMBeans);
 
+                logger.debug("Found {} new MBeans.", addedMBeans.size());
+
                 for (final ObjectInstance instance : addedMBeans) {
-                    final Class interfaceClass = MBEAN_INTERFACES.get(instance.getClassName());
+                    final MBeanInfo mBeanInfo = mBeanServerConnection.getMBeanInfo(instance.getObjectName());
+                    final Descriptor mBeanDescriptor = mBeanInfo.getDescriptor();
 
-                    logger.debug("Registering MBean {}.", instance);
+                    final String interfaceClassName = (String) mBeanDescriptor.getFieldValue(JMX.INTERFACE_CLASS_NAME_FIELD);
+                    if (interfaceClassName == null) {
+                        logger.debug("Cannot register MBean {}. MBean interface class name not defined.", instance);
 
-                    if (interfaceClass == null) {
-                        logger.debug("Cannot register MBean {}. Unrecognised class.", instance);
                         continue;
                     }
 
+                    final Class<?> interfaceClass;
+                    try {
+                        interfaceClass = Class.forName(interfaceClassName);
+
+                    } catch (final ClassNotFoundException e) {
+                        logger.debug("Cannot register MBean {}. Unrecognised class.", instance);
+
+                        continue;
+                    }
+
+                    logger.debug("Registering MBean/MXBean {}.", instance);
+
+                    final boolean isMXBean = Boolean.valueOf((String) mBeanDescriptor.getFieldValue(JMX.MXBEAN_FIELD));
+
                     final ObjectName objectName = instance.getObjectName();
-                    final Object mBeanProxy = JMX.newMBeanProxy(mBeanServerConnection, objectName, interfaceClass);
+                    final Object mBeanProxy;
+                    if (isMXBean) {
+                        mBeanProxy = JMX.newMXBeanProxy(mBeanServerConnection, objectName, interfaceClass);
+                    } else {
+                        mBeanProxy = JMX.newMBeanProxy(mBeanServerConnection, objectName, interfaceClass);
+                    }
 
                     registerMBean(mBeanProxy, objectName);
                 }
@@ -76,20 +97,8 @@ public class JMXHarvester extends Harvester {
 
             currentMBeans = mBeans;
 
-        } catch (final Exception e) {
+        } catch (final Throwable e) {
             logger.error("Failed to reconcile MBeans.", e);
         }
     }
-
-    private static final Map<String, Class> MBEAN_INTERFACES = ImmutableMap.<String, Class>builder()
-        .put("org.apache.cassandra.metrics.CassandraMetricsRegistry$JmxGauge", CassandraMetricsRegistry.JmxGaugeMBean.class)
-        .put("org.apache.cassandra.metrics.CassandraMetricsRegistry$JmxCounter", CassandraMetricsRegistry.JmxCounterMBean.class)
-        .put("org.apache.cassandra.metrics.CassandraMetricsRegistry$JmxMeter", CassandraMetricsRegistry.JmxMeterMBean.class)
-        .put("org.apache.cassandra.metrics.CassandraMetricsRegistry$JmxHistogram", CassandraMetricsRegistry.JmxHistogramMBean.class)
-        .put("org.apache.cassandra.metrics.CassandraMetricsRegistry$JmxTimer", CassandraMetricsRegistry.JmxTimerMBean.class)
-
-        .put("org.apache.cassandra.gms.FailureDetector", FailureDetectorMBean.class)
-        .put("org.apache.cassandra.locator.EndpointSnitchInfo", EndpointSnitchInfoMBean.class)
-        .put("org.apache.cassandra.service.StorageService", StorageServiceMBean.class)
-        .build();
 }

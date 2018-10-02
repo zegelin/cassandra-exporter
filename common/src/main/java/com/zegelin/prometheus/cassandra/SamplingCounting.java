@@ -1,8 +1,8 @@
 package com.zegelin.prometheus.cassandra;
 
-import com.zegelin.prometheus.domain.Quantile;
+import com.zegelin.prometheus.domain.Interval;
 
-import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * Similar to {@link com.codahale.metrics.Sampling} and {@link com.codahale.metrics.Counting}
@@ -12,5 +12,5 @@ import java.util.Map;
 public interface SamplingCounting {
     long getCount();
 
-    Map<Quantile, Float> getQuantiles();
+    Stream<Interval> getIntervals();
 }
