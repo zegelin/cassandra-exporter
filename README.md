@@ -1,8 +1,6 @@
-# cassandra-exporter [![CircleCI](https://circleci.com/gh/zegelin/cassandra-exporter.svg?style=svg)](https://circleci.com/gh/zegelin/cassandra-exporter)
+# cassandra-exporter [![CircleCI](https://circleci.com/gh/instaclustr/cassandra-exporter.svg?style=svg)](https://circleci.com/gh/instaclustr/cassandra-exporter)
 
 *Project Status: beta*
-
-Releases are currently available at <https://github.com/zegelin/cassandra-exporter>
 
 
 ## Introduction
@@ -43,7 +41,7 @@ Other Cassandra and Prometheus versions will be tested for compatibility in the 
 
 ### Agent
 
-Download the [latest release](https://github.com/zegelin/cassandra-exporter/releases/latest) and copy `cassandra-exporter-agent-<version>.jar` to `$CASSANDRA_HOME/lib` (typically `/usr/share/cassandra/lib` in most package installs).
+Download the [latest release](https://github.com/instaclustr/cassandra-exporter/releases/latest) and copy `cassandra-exporter-agent-<version>.jar` to `$CASSANDRA_HOME/lib` (typically `/usr/share/cassandra/lib` in most package installs).
 
 Then edit `$CASSANDRA_CONF/cassandra-env.sh` (typically `/etc/cassandra/cassandra-env.sh`) and append the following:
 
@@ -58,7 +56,7 @@ Prometheus metrics will now be available at <http://localhost:9500/metrics>.
 
 While it is preferable to run *cassandra-exporter* as a Java agent for performance, it can instead be run as an external application if required.
 
-Download the [latest release](https://github.com/zegelin/cassandra-exporter/releases/latest) and copy `cassandra-exporter-standalone-<version>.jar` to a location of your choosing.
+Download the [latest release](https://github.com/instaclustr/cassandra-exporter/releases/latest) and copy `cassandra-exporter-standalone-<version>.jar` to a location of your choosing.
 
 The exporter can be started via `java -jar /path/to/cassandra-exporter-standalone-<version>.jar`.
 
@@ -290,7 +288,7 @@ applied simplifies things, especially when Prometheus is monitoring multiple clu
 
 ## Exported Metrics
 
-See the [Exported Metrics](https://github.com/zegelin/cassandra-exporter/wiki/Exported-Metrics) wiki page for a list.
+See the [Exported Metrics](https://github.com/instaclustr/cassandra-exporter/wiki/Exported-Metrics) wiki page for a list.
 
 We suggest viewing the metrics endpoint (e.g., <http://localhost:9500/metrics>) in a browser to get an understanding of what metrics
 are exported by your Cassandra node.
@@ -298,7 +296,7 @@ are exported by your Cassandra node.
 
 ## Unstable, Missing & Future Features
 
-See the [project issue tracker](https://github.com/zegelin/cassandra-exporter/issues) for a complete list.
+See the [project issue tracker](https://github.com/instaclustr/cassandra-exporter/issues) for a complete list.
 
 - Embedded HTML metrics viewer
 
