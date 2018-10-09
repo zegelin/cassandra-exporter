@@ -1,19 +1,20 @@
 package com.zegelin.prometheus.cassandra;
 
-import com.google.common.base.Suppliers;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.zegelin.function.FloatFloatFunction;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector.Factory;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
 import com.zegelin.prometheus.cassandra.collector.FailureDetectorMBeanMetricFamilyCollector;
-import com.zegelin.prometheus.cassandra.collector.GossiperMBeanMetricFamilyCollector;
 import com.zegelin.prometheus.cassandra.collector.LatencyMetricGroupSummaryCollector;
 import com.zegelin.prometheus.cassandra.collector.StorageServiceMBeanMetricFamilyCollector;
 import com.zegelin.prometheus.cassandra.collector.dynamic.FunctionalMetricFamilyCollector;
 import com.zegelin.prometheus.cassandra.collector.jvm.*;
 import com.zegelin.prometheus.domain.Labels;
+import com.zegelin.prometheus.domain.MetricFamily;
 
 import javax.management.*;
 import java.util.*;
@@ -22,6 +23,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.zegelin.jmx.ObjectNames.format;
 import static com.zegelin.prometheus.cassandra.CollectorFunctions.*;
@@ -65,29 +67,26 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         }
 
         Factory build() {
-            return new Factory() {
-                @Override
-                public MBeanGroupMetricFamilyCollector createCollector(final NamedObject<?> mBean) {
-                    try {
-                        if (!objectNameQuery.apply(mBean.name))
-                            return null;
-                    } catch (final BadStringOperationException | BadBinaryOpValueExpException | BadAttributeValueExpException | InvalidApplicationException e) {
-                        throw new IllegalStateException("Failed to apply object name query to object name.", e);
-                    }
-
-                    final Map<String, String> keyPropertyList = mBean.name.getKeyPropertyList();
-
-                    final Map<String, String> rawLabels = new HashMap<>();
-                    {
-                        for (final LabelMaker labelMaker : labelMakers) {
-                            rawLabels.putAll(labelMaker.apply(keyPropertyList));
-                        }
-                    }
-
-                    final String name = String.format("cassandra_%s", metricFamilyName);
-
-                    return collectorConstructor.groupCollectorForMBean(name, help, new Labels(rawLabels), mBean);
+            return mBean -> {
+                try {
+                    if (!objectNameQuery.apply(mBean.name))
+                        return null;
+                } catch (final BadStringOperationException | BadBinaryOpValueExpException | BadAttributeValueExpException | InvalidApplicationException e) {
+                    throw new IllegalStateException("Failed to apply object name query to object name.", e);
                 }
+
+                final Map<String, String> keyPropertyList = mBean.name.getKeyPropertyList();
+
+                final Map<String, String> rawLabels = new HashMap<>();
+                {
+                    for (final LabelMaker labelMaker : labelMakers) {
+                        rawLabels.putAll(labelMaker.apply(keyPropertyList));
+                    }
+                }
+
+                final String name = String.format("cassandra_%s", metricFamilyName);
+
+                return collectorConstructor.groupCollectorForMBean(name, help, new Labels(rawLabels), mBean);
             };
         }
 
@@ -99,10 +98,12 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
     private final MetadataFactory metadataFactory;
     private final boolean perThreadTimingEnabled;
+    private final Set<TableLabels> tableLabels;
 
     public FactoriesSupplier(final MetadataFactory metadataFactory, final HarvesterOptions options) {
         this.metadataFactory = metadataFactory;
         this.perThreadTimingEnabled = options.perThreadTimingEnabled;
+        this.tableLabels = options.tableLabels;
     }
 
 
@@ -226,11 +227,31 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
                 .build();
     }
 
+    public enum TableLabels implements LabelEnum {
+        TABLE_TYPE,
+        INDEX_TYPE,
+        INDEX_CLASS,
+        COMPACTION_STRATEGY_CLASS;
+
+        @Override
+        public String labelName() {
+            return name().toLowerCase();
+        }
+    }
+
     private Factory tableMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help) {
         return tableMetricFactory(collectorConstructor, jmxName, familyNameSuffix, help, ImmutableMap.of());
     }
 
+    private Factory tableCompactionMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help) {
+        return tableMetricFactory(collectorConstructor, jmxName, familyNameSuffix, help, true, ImmutableMap.of());
+    }
+
     private Factory tableMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help, final Map<String, String> extraLabels) {
+        return tableMetricFactory(collectorConstructor, jmxName, familyNameSuffix, help, false, extraLabels);
+    }
+
+    private Factory tableMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help, final boolean includeCompactionLabels, final Map<String, String> extraLabels) {
         final QueryExp objectNameQuery = Query.or(
                 format("org.apache.cassandra.metrics:type=Table,keyspace=*,scope=*,name=%s", jmxName),
                 format("org.apache.cassandra.metrics:type=IndexTable,keyspace=*,scope=*,name=%s", jmxName)
@@ -256,16 +277,15 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
                     if (indexName != null) {
                         labelsBuilder.put("table", tableName)
-                                .put("index", indexName)
-                                .put("table_type", "index");
+                                .put("index", indexName);
+
+                        LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labelsBuilder, () -> "index");
 
                         final Optional<MetadataFactory.IndexMetadata> indexMetadata = metadataFactory.indexMetadata(keyspaceName, tableName, indexName);
 
                         indexMetadata.ifPresent(m -> {
-                            labelsBuilder.put("table_id", m.id().toString());
-                            labelsBuilder.put("index_type", m.indexType().toString());
-
-                            m.customClassName().ifPresent(s -> labelsBuilder.put("index_class_name", s));
+                            LabelEnum.addIfEnabled(TableLabels.INDEX_TYPE, tableLabels, labelsBuilder, () -> m.indexType().name().toLowerCase());
+                            m.customClassName().ifPresent(s -> LabelEnum.addIfEnabled(TableLabels.INDEX_CLASS, tableLabels, labelsBuilder, () -> s));
                         });
 
                     } else {
@@ -274,11 +294,13 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
                         final Optional<MetadataFactory.TableMetadata> tableMetadata = metadataFactory.tableOrViewMetadata(keyspaceName, tableName);
 
                         tableMetadata.ifPresent(m -> {
-                            labelsBuilder.put("table_id", m.id().toString());
-                            labelsBuilder.put("table_type", m.isView() ? "view" : "table");
+                            LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labelsBuilder, () -> m.isView() ? "view" : "table");
+
+                            if (includeCompactionLabels) {
+                                LabelEnum.addIfEnabled(TableLabels.COMPACTION_STRATEGY_CLASS, tableLabels, labelsBuilder, m::compactionStrategyClassName);
+                            }
                         });
                     }
-
 
                     return labelsBuilder.build();
                 })
@@ -333,7 +355,10 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
                 .withLabelMaker(keyPropertyList -> {
                     final HashMap<String, String> labels = new HashMap<>();
 
-                    labels.put("endpoint", keyPropertyList.get("scope")); // IP address of node
+                    {
+                        final String endpoint = keyPropertyList.get("scope"); // IP address of other node
+                        labels.putAll(metadataFactory.endpointLabels(endpoint));
+                    }
 
                     labels.computeIfAbsent("task_type", k -> {
                         final String name = keyPropertyList.get("name");
@@ -369,15 +394,24 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         };
     }
 
+
     private static <T> FactoryBuilder.CollectorConstructor functionalCollector(final FunctionalMetricFamilyCollector.CollectorFunction<T> function) {
         return (final String name, final String help, final Labels labels, final NamedObject<?> mBean) ->
                 new FunctionalMetricFamilyCollector<>(name, help, ImmutableMap.of(labels, mBean.<T>cast()), function);
     }
 
+
     private static <T> FunctionalMetricFamilyCollector.CollectorFunction<T> cache(final FunctionalMetricFamilyCollector.CollectorFunction<T> fn, final long duration, final TimeUnit unit) {
-        return labeledObjectGroup -> {
-            return Suppliers.memoizeWithExpiration(() -> fn.apply(labeledObjectGroup), duration, unit).get();
-        };
+        final LoadingCache<FunctionalMetricFamilyCollector.LabeledObjectGroup<T>, List<MetricFamily>> cache = CacheBuilder.newBuilder()
+                .expireAfterWrite(duration, unit)
+                .build(new CacheLoader<FunctionalMetricFamilyCollector.LabeledObjectGroup<T>, List<MetricFamily>>() {
+                    @Override
+                    public List<MetricFamily> load(final FunctionalMetricFamilyCollector.LabeledObjectGroup<T> key) throws Exception {
+                        return fn.apply(key).map(MetricFamily::cache).collect(Collectors.toList()); // store Stream as a List, since Streams can't be replayed
+                    }
+                });
+
+        return labeledObjectGroup -> cache.getUnchecked(labeledObjectGroup).stream();
     }
 
 
@@ -385,9 +419,8 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     public List<Factory> get() {
         final ImmutableList.Builder<Factory> builder = ImmutableList.builder();
 
-        builder.add(FailureDetectorMBeanMetricFamilyCollector.FACTORY);
-        builder.add(GossiperMBeanMetricFamilyCollector.FACTORY);
-        builder.add(StorageServiceMBeanMetricFamilyCollector.FACTORY);
+        builder.add(FailureDetectorMBeanMetricFamilyCollector.factory(metadataFactory));
+        builder.add(StorageServiceMBeanMetricFamilyCollector.factory(metadataFactory));
 
         builder.add(MemoryPoolMXBeanMetricFamilyCollector.FACTORY);
         builder.add(GarbageCollectorMXBeanMetricFamilyCollector.FACTORY);
@@ -491,7 +524,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         {
             builder.add(compactionMetric(functionalCollector(counterAsCounter()),"BytesCompacted", "bytes_compacted_total", "Total number of bytes compacted (since server start)."));
             builder.add(compactionMetric(functionalCollector(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", "Total number of completed compaction tasks (since server start)."));
-            builder.add(compactionMetric(functionalCollector(numericGaugeAsGauge()), "PendingTasks", "pending_tasks", "Estimated number of compactions remaining."));
+            // "PendingTasks" ignored -- it's an aggregate of the table-level metrics (see the table metric "PendingCompactions")
             builder.add(compactionMetric(functionalCollector(meterAsCounter()), "TotalCompactionsCompleted", "completed_total", "Total number of compactions (since server start)."));
         }
 
@@ -570,8 +603,8 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
             builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "PendingFlushes", "pending_flushes", null));
             builder.add(tableMetricFactory(functionalCollector(counterAsCounter()), "BytesFlushed", "flushed_bytes_total", null));
 
-            builder.add(tableMetricFactory(functionalCollector(counterAsCounter()), "CompactionBytesWritten", "compaction_bytes_written_total", null));
-            builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "PendingCompactions", "estimated_pending_compactions", null));
+            builder.add(tableCompactionMetricFactory(functionalCollector(counterAsCounter()), "CompactionBytesWritten", "compaction_bytes_written_total", null));
+            builder.add(tableCompactionMetricFactory(functionalCollector(numericGaugeAsGauge()), "PendingCompactions", "estimated_pending_compactions", null));
 
             builder.add(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "LiveSSTableCount", "live_sstables", null));
 

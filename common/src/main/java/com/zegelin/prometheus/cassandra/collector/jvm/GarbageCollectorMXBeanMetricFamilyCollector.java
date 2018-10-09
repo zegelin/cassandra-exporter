@@ -16,7 +16,7 @@ import java.util.stream.Stream;
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.millisecondsToSeconds;
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.neg1ToNaN;
 
-public class GarbageCollectorMXBeanMetricFamilyCollector implements MBeanGroupMetricFamilyCollector {
+public class GarbageCollectorMXBeanMetricFamilyCollector extends MBeanGroupMetricFamilyCollector {
     private static final ObjectName GARBAGE_COLLECTOR_MXBEAN_NAME_PATTERN = ObjectNames.create(ManagementFactory.GARBAGE_COLLECTOR_MXBEAN_DOMAIN_TYPE + ",*");
 
     public static final Factory FACTORY = mBean -> {
@@ -35,12 +35,6 @@ public class GarbageCollectorMXBeanMetricFamilyCollector implements MBeanGroupMe
     private GarbageCollectorMXBeanMetricFamilyCollector(final Map<Labels, GarbageCollectorMXBean> labeledGarbageCollectorMXBeans) {
         this.labeledGarbageCollectorMXBeans = labeledGarbageCollectorMXBeans;
     }
-
-    @Override
-    public String name() {
-        return ManagementFactory.GARBAGE_COLLECTOR_MXBEAN_DOMAIN_TYPE;
-    }
-
 
     @Override
     public MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector rawOther) {

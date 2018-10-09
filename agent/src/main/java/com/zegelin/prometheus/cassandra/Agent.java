@@ -42,6 +42,8 @@ public class Agent implements Callable<Void> {
 
         final CommandLine commandLine = new CommandLine(new Agent());
 
+        commandLine.setCaseInsensitiveEnumValuesAllowed(true);
+
         commandLine.parseWithHandlers(
                 new CommandLine.RunLast(),
                 CommandLine.defaultExceptionHandler().andExit(1),

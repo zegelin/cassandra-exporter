@@ -6,11 +6,13 @@ import com.zegelin.prometheus.domain.MetricFamily;
 import javax.management.ObjectName;
 import java.util.stream.Stream;
 
-public interface MBeanGroupMetricFamilyCollector {
+public abstract class MBeanGroupMetricFamilyCollector {
     /**
      * @return the name of the collector. Collectors with the same name will be merged together {@see merge}.
      */
-    String name();
+    protected String name() {
+        return this.getClass().getCanonicalName();
+    }
 
     /**
      * Merge two {@link MBeanGroupMetricFamilyCollector}s together.
@@ -18,24 +20,24 @@ public interface MBeanGroupMetricFamilyCollector {
      * @param other The other {@link MBeanGroupMetricFamilyCollector} to merge with.
      * @return a new {@link MBeanGroupMetricFamilyCollector} that is the combinator of this {@link MBeanGroupMetricFamilyCollector} and {@param other}
      */
-    default MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector other) {
+    protected MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector other) {
         throw new IllegalStateException(String.format("Merging of %s and %s not implemented.", this, other));
     }
 
     /**
      * @return a new MBeanGroupMetricFamilyCollector with the named MBean removed, or null if the collector is empty.
      */
-    default MBeanGroupMetricFamilyCollector removeMBean(final ObjectName mBeanName) {
+    protected MBeanGroupMetricFamilyCollector removeMBean(final ObjectName mBeanName) {
         return null;
     }
 
     /**
      * @return a {@link Stream} of {@link MetricFamily}s that contain the metrics collected by this collector.
      */
-    Stream<MetricFamily> collect();
+    protected abstract Stream<MetricFamily> collect();
 
 
-    interface Factory {
+    protected interface Factory {
         /**
          * Create a {@link MBeanGroupMetricFamilyCollector} for the given MBean, or null if this factory
          * doesn't support the given MBean.

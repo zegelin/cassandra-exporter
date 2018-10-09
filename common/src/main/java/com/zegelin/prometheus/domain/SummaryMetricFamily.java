@@ -1,5 +1,8 @@
 package com.zegelin.prometheus.domain;
 
+import java.util.List;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class SummaryMetricFamily extends MetricFamily<SummaryMetricFamily.Summary> {
@@ -7,9 +10,20 @@ public class SummaryMetricFamily extends MetricFamily<SummaryMetricFamily.Summar
         super(name, help, metrics);
     }
 
+    private SummaryMetricFamily(final String name, final String help, final Supplier<Stream<Summary>> metricsStreamSupplier) {
+        super(name, help, metricsStreamSupplier);
+    }
+
     @Override
     public <R> R accept(final MetricFamilyVisitor<R> visitor) {
         return visitor.visit(this);
+    }
+
+    @Override
+    public MetricFamily<Summary> cache() {
+        final List<Summary> metrics = metrics().collect(Collectors.toList());
+
+        return new SummaryMetricFamily(name, help, metrics::stream);
     }
 
     public static class Summary extends Metric {

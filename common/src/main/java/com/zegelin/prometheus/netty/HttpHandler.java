@@ -171,7 +171,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
 
         outer:
         for (final MediaType acceptedMediaType : acceptedMediaTypes) {
-            for (MediaType supportedMediaType : supportedMediaTypes) {
+            for (final MediaType supportedMediaType : supportedMediaTypes) {
                 if (supportedMediaType.is(acceptedMediaType.withoutParameters())) {
                     preferredMediaTypes.put(supportedMediaType, acceptedMediaType);
                     continue outer;
@@ -204,7 +204,10 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
         response.headers().add(HttpHeaders.Names.CONTENT_TYPE, MediaType.HTML_UTF_8);
 
         ctx.write(response);
-        ctx.writeAndFlush(new DefaultLastHttpContent()).addListener(ChannelFutureListener.CLOSE);
+
+        if (request.getMethod() == HttpMethod.GET) {
+            ctx.writeAndFlush(new DefaultLastHttpContent()).addListener(ChannelFutureListener.CLOSE);
+        }
     }
 
     private void sendMetrics(final ChannelHandlerContext ctx, final FullHttpRequest request, final QueryStringDecoder queryString) {
@@ -270,7 +273,10 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
                 response.headers().set(HttpHeaders.Names.CONTENT_TYPE, TEXT_FORMAT_004_TYPE);
 
                 ctx.write(response);
-                ctx.write(new TextFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp));
+
+                if (request.getMethod() == HttpMethod.GET) {
+                    ctx.write(new TextFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp));
+                }
 
                 ctx.writeAndFlush(new DefaultLastHttpContent()).addListener(ChannelFutureListener.CLOSE);
 
@@ -281,7 +287,10 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
                 response.headers().set(HttpHeaders.Names.CONTENT_TYPE, MediaType.JSON_UTF_8);
 
                 ctx.write(response);
-                ctx.write(new JsonFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp));
+
+                if (request.getMethod() == HttpMethod.GET) {
+                    ctx.write(new JsonFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp));
+                }
 
                 ctx.writeAndFlush(new DefaultLastHttpContent()).addListener(ChannelFutureListener.CLOSE);
 

@@ -17,27 +17,20 @@ import java.util.stream.Stream;
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.nanosecondsToSeconds;
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.neg1ToNaN;
 
-public class OperatingSystemMXBeanMetricFamilyCollector implements MBeanGroupMetricFamilyCollector {
+public class OperatingSystemMXBeanMetricFamilyCollector extends MBeanGroupMetricFamilyCollector {
     private static final ObjectName OPERATING_SYSTEM_MXBEAN_NAME = ObjectNames.create(ManagementFactory.OPERATING_SYSTEM_MXBEAN_NAME);
 
     public static final Factory FACTORY = mBean -> {
         if (!OPERATING_SYSTEM_MXBEAN_NAME.apply(mBean.name))
             return null;
 
-        final OperatingSystemMXBean memoryMXBean = (OperatingSystemMXBean) mBean.object;
-
-        return new OperatingSystemMXBeanMetricFamilyCollector(memoryMXBean);
+        return new OperatingSystemMXBeanMetricFamilyCollector((OperatingSystemMXBean) mBean.object);
     };
 
     private final OperatingSystemMXBean operatingSystemMXBean;
 
     private OperatingSystemMXBeanMetricFamilyCollector(final OperatingSystemMXBean operatingSystemMXBean) {
         this.operatingSystemMXBean = operatingSystemMXBean;
-    }
-
-    @Override
-    public String name() {
-        return ManagementFactory.OPERATING_SYSTEM_MXBEAN_NAME;
     }
 
     @Override

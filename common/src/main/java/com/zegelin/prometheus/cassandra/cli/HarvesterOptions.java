@@ -1,6 +1,7 @@
 package com.zegelin.prometheus.cassandra.cli;
 
 import com.zegelin.netty.Floats;
+import com.zegelin.prometheus.cassandra.FactoriesSupplier;
 import com.zegelin.prometheus.cassandra.Harvester;
 import picocli.CommandLine;
 import picocli.CommandLine.Option;
@@ -60,20 +61,51 @@ public class HarvesterOptions {
     }
 
     @Option(names = {"-g", "--global-labels"}, paramLabel = "LABEL", split = ",",
-            converter = GlobalLabelTypeConverter.class,
             description = "Select which global labels to include on all exported metrics. " +
-                    "Valid options are: 'cluster_name', 'host_id' (UUID of the node), 'node' (node endpoint IP address), " +
-                    "'datacenter', 'rack'. " +
-                    "The default is to include all global labels. " +
+                    "Valid options are: 'CLUSTER' (cluster name), 'HOST_ID' (UUID of the node), 'NODE' (node endpoint IP address), " +
+                    "'DATACENTER' (DC name), 'RACK' (rack name). " +
+                    "The default is to include all global labels except HOST_ID. " +
                     "To disable all global labels use --no-global-labels."
     )
     public Set<Harvester.GlobalLabel> globalLabels = EnumSet.allOf(Harvester.GlobalLabel.class);
+    {
+        globalLabels.remove(Harvester.GlobalLabel.HOST_ID); // remove host ID by default to avoid creating new time-series on node replace.
+    }
 
-    @Option(names = {"--no-global-labels"},
+    @Option(names = {"--no-global-labels"}, arity = "0",
             description = "Disable all global labels.")
     public void setNoGlobalLabels(final boolean noGlobalLabels) {
-        this.globalLabels = (noGlobalLabels ? EnumSet.noneOf(Harvester.GlobalLabel.class) : EnumSet.allOf(Harvester.GlobalLabel.class));
+        if (!noGlobalLabels) {
+            throw new IllegalStateException();
+        }
+
+        this.globalLabels = EnumSet.noneOf(Harvester.GlobalLabel.class);
     }
+
+
+    @Option(names = {"-t", "--table-labels"}, paramLabel = "LABEL", split = ",",
+            description = "Select which labels to include on table-level metrics. " +
+                    "Valid options are: " +
+                    "'TABLE_TYPE' (table, view or index), " +
+                    "'INDEX_TYPE' (for indexes -- keys, composites or custom), " +
+                    "'INDEX_CLASS' (the index class name for custom indexes),  " +
+                    "'COMPACTION_STRATEGY_CLASS' (for tables & views, compaction-related metrics only). " +
+                    "The default is to include all table labels. " +
+                    "To disable all table labels use --no-table-labels."
+    )
+    public Set<FactoriesSupplier.TableLabels> tableLabels = EnumSet.allOf(FactoriesSupplier.TableLabels.class);
+
+    @Option(names = {"--no-table-labels"},
+            description = "Disable all table labels.")
+    public void setNoTableLabels(final boolean noTableLabels) {
+        if (!noTableLabels) {
+            throw new IllegalStateException();
+        }
+
+        this.tableLabels = EnumSet.noneOf(FactoriesSupplier.TableLabels.class);
+    }
+
+
 
     @Option(names = {"--no-fast-float"},
             description = "Disable the use of fast float -> ascii conversion.")
@@ -83,5 +115,5 @@ public class HarvesterOptions {
 
     @Option(names = {"--enable-per-thread-cpu-times"},
             description = "Collect per-thread CPU times, where each thread gets its own time-series. (EXPERIMENTAL)")
-    public boolean perThreadTimingEnabled;
+    public boolean perThreadTimingEnabled = false;
 }

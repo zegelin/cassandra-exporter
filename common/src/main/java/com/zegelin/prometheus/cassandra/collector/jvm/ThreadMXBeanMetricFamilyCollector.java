@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.nanosecondsToSeconds;
 
-public class ThreadMXBeanMetricFamilyCollector implements MBeanGroupMetricFamilyCollector {
+public class ThreadMXBeanMetricFamilyCollector extends  MBeanGroupMetricFamilyCollector {
     private static final ObjectName THREAD_MXBEAN_NAME = ObjectNames.create(ManagementFactory.THREAD_MXBEAN_NAME);
 
     private static final Labels USER_THREAD_COUNT_LABELS = Labels.of("type", "user");
@@ -24,9 +24,7 @@ public class ThreadMXBeanMetricFamilyCollector implements MBeanGroupMetricFamily
             if (!THREAD_MXBEAN_NAME.apply(mBean.name))
                 return null;
 
-            final ThreadMXBean threadMXBean = (ThreadMXBean) mBean.object;
-
-            return new ThreadMXBeanMetricFamilyCollector(threadMXBean, perThreadTimingEnabled);
+            return new ThreadMXBeanMetricFamilyCollector((ThreadMXBean) mBean.object, perThreadTimingEnabled);
         };
     }
 
@@ -36,11 +34,6 @@ public class ThreadMXBeanMetricFamilyCollector implements MBeanGroupMetricFamily
     private ThreadMXBeanMetricFamilyCollector(final ThreadMXBean threadMXBean, final boolean perThreadTimingEnabled) {
         this.threadMXBean = threadMXBean;
         this.perThreadTimingEnabled = perThreadTimingEnabled;
-    }
-
-    @Override
-    public String name() {
-        return ManagementFactory.THREAD_MXBEAN_NAME;
     }
 
     @Override

@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-public class FunctionalMetricFamilyCollector<T> implements MBeanGroupMetricFamilyCollector {
+public class FunctionalMetricFamilyCollector<T> extends MBeanGroupMetricFamilyCollector {
     private final String name, help;
 
     public interface LabeledObjectGroup<T> {

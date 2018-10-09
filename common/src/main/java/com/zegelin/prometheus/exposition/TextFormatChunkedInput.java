@@ -220,17 +220,22 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
             }
 
             private <T extends Metric> Function<ByteBuf, Boolean> metricWriter(final MetricFamily<T> metricFamily, final BiConsumer<T, ByteBuf> writer) {
-                final Iterator<T> metricIterator = metricFamily.metrics.iterator();
+                try {
+                    final Iterator<T> metricIterator = metricFamily.metrics().iterator();
 
-                return (buffer) -> {
-                    if (metricIterator.hasNext()) {
-                        writer.accept(metricIterator.next(), buffer);
+                    return (buffer) -> {
+                        if (metricIterator.hasNext()) {
+                            writer.accept(metricIterator.next(), buffer);
 
-                        return true;
-                    }
+                            return true;
+                        }
 
-                    return false;
-                };
+                        return false;
+                    };
+
+                } catch (Exception e) {
+                    throw e;
+                }
             }
 
             @Override
@@ -354,7 +359,12 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
 
         // add slices till we hit the chunk size (or slightly over it), or hit EOF
         while (chunkBuffer.readableBytes() < 1024 * 1024 && state != State.EOF) {
-            nextSlice(chunkBuffer);
+            try {
+                nextSlice(chunkBuffer);
+
+            } catch (Exception e) {
+                throw e;
+            }
         }
 
         return new DefaultHttpContent(chunkBuffer);

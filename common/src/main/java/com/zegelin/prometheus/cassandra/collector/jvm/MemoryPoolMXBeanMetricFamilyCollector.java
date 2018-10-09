@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.neg1ToNaN;
 
-public class MemoryPoolMXBeanMetricFamilyCollector implements MBeanGroupMetricFamilyCollector {
+public class MemoryPoolMXBeanMetricFamilyCollector extends MBeanGroupMetricFamilyCollector {
     private static final ObjectName MEMORY_POOL_MXBEAN_NAME_PATTERN = ObjectNames.create(ManagementFactory.MEMORY_POOL_MXBEAN_DOMAIN_TYPE + ",*");
 
     public static final Factory FACTORY = mBean -> {
@@ -41,10 +41,6 @@ public class MemoryPoolMXBeanMetricFamilyCollector implements MBeanGroupMetricFa
         this.labeledMemoryPoolMXBeans = labeledMemoryPoolMXBeans;
     }
 
-    @Override
-    public String name() {
-        return ManagementFactory.MEMORY_POOL_MXBEAN_DOMAIN_TYPE;
-    }
 
     @Override
     public MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector rawOther) {

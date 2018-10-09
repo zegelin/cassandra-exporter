@@ -2,7 +2,6 @@ package com.zegelin.prometheus.cassandra;
 
 import com.google.common.collect.ImmutableMap;
 import com.zegelin.jmx.NamedObject;
-import com.zegelin.jmx.ObjectNames;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
 import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
@@ -16,18 +15,25 @@ import javax.management.ObjectName;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
+
+import static com.zegelin.prometheus.cassandra.CassandraObjectNames.ENDPOINT_SNITCH_INFO_MBEAN_NAME;
+import static com.zegelin.prometheus.cassandra.CassandraObjectNames.STORAGE_SERVICE_MBEAN_NAME;
 
 public abstract class Harvester {
     private static final Logger logger = LoggerFactory.getLogger(Harvester.class);
 
-    public enum GlobalLabel {
-        CLUSTER_NAME,
+    public enum GlobalLabel implements LabelEnum {
+        CLUSTER,
         HOST_ID,
         NODE,
         DATACENTER,
         RACK;
+
+        @Override
+        public String labelName() {
+            return "cassandra_" + name().toLowerCase();
+        }
     }
 
     public static abstract class Exclusion {
@@ -117,8 +123,8 @@ public abstract class Harvester {
     private EndpointSnitchInfoMBean endpointSnitchInfo;
 
     private final Map<ObjectName, Consumer<Object>> requiredMBeansRegistry = ImmutableMap.<ObjectName, Consumer<Object>>builder()
-            .put(ObjectNames.create("org.apache.cassandra.db:type=EndpointSnitchInfo"), (o) -> endpointSnitchInfo = (EndpointSnitchInfoMBean) o)
-            .put(ObjectNames.create("org.apache.cassandra.db:type=StorageService"), (o) -> storageService = (StorageServiceMBean) o)
+            .put(ENDPOINT_SNITCH_INFO_MBEAN_NAME, (o) -> endpointSnitchInfo = (EndpointSnitchInfoMBean) o)
+            .put(STORAGE_SERVICE_MBEAN_NAME, (o) -> storageService = (StorageServiceMBean) o)
             .build();
 
     private final CountDownLatch requiredMBeansLatch = new CountDownLatch(requiredMBeansRegistry.size());
@@ -128,9 +134,13 @@ public abstract class Harvester {
 
 
     protected Harvester(final MetadataFactory metadataFactory, final HarvesterOptions options) {
-        this.collectorFactories = new FactoriesSupplier(metadataFactory, options).get();
+        this.collectorFactories = new ArrayList<>(new FactoriesSupplier(metadataFactory, options).get());
         this.exclusions = options.exclusions;
         this.enabledGlobalLabels = options.globalLabels;
+    }
+
+    protected void addCollectorFactory(final MBeanGroupMetricFamilyCollector.Factory factory) {
+        collectorFactories.add(factory);
     }
 
 
@@ -157,8 +167,6 @@ public abstract class Harvester {
 
                 mBeanCollectorsByName.merge(collector.name(), collector, MBeanGroupMetricFamilyCollector::merge);
                 mBeanNameToCollectorNameMap.put(name, collector.name());
-
-                break;
 
             } catch (final Exception e) {
                 logger.warn("Failed to register collector for MBean {}", name, e);
@@ -235,32 +243,11 @@ public abstract class Harvester {
 
         final ImmutableMap.Builder<String, String> mapBuilder = ImmutableMap.builder();
 
-        for (final GlobalLabel label : enabledGlobalLabels) {
-            switch (label) {
-                case CLUSTER_NAME:
-                    mapBuilder.put("cassandra_cluster_name", storageService.getClusterName());
-                    break;
-
-                case HOST_ID:
-                    mapBuilder.put("cassandra_host_id", hostId);
-                    break;
-
-                case NODE:
-                    mapBuilder.put("cassandra_node", endpoint);
-                    break;
-
-                case DATACENTER:
-                    mapBuilder.put("cassandra_datacenter", endpointSnitchInfo.getDatacenter());
-                    break;
-
-                case RACK:
-                    mapBuilder.put("cassandra_rack", endpointSnitchInfo.getRack());
-                    break;
-
-                default:
-                    throw new IllegalStateException();
-            }
-        }
+        LabelEnum.addIfEnabled(GlobalLabel.CLUSTER, enabledGlobalLabels, mapBuilder, storageService::getClusterName);
+        LabelEnum.addIfEnabled(GlobalLabel.HOST_ID, enabledGlobalLabels, mapBuilder, () -> hostId);
+        LabelEnum.addIfEnabled(GlobalLabel.NODE, enabledGlobalLabels, mapBuilder, () -> endpoint);
+        LabelEnum.addIfEnabled(GlobalLabel.DATACENTER, enabledGlobalLabels, mapBuilder, endpointSnitchInfo::getDatacenter);
+        LabelEnum.addIfEnabled(GlobalLabel.RACK, enabledGlobalLabels, mapBuilder, endpointSnitchInfo::getRack);
 
         return new Labels(mapBuilder.build());
     }

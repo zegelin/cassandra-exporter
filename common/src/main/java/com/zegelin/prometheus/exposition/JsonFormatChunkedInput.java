@@ -226,7 +226,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
 
         class MetricVisitor implements MetricFamilyVisitor<Function<ByteBuf, Boolean>> {
             private <T extends Metric> Function<ByteBuf, Boolean> metricWriter(final MetricFamily<T> metricFamily, final BiConsumer<T, ByteBuf> valueWriter) {
-                final Iterator<T> metricIterator = metricFamily.metrics.iterator();
+                final Iterator<T> metricIterator = metricFamily.metrics().iterator();
 
                 return (buffer) -> {
                     if (metricIterator.hasNext()) {
