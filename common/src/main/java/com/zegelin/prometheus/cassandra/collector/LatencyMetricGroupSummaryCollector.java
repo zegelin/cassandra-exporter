@@ -24,7 +24,7 @@ import static com.zegelin.prometheus.cassandra.CassandraMetricsUtilities.jmxTime
 
     This collector combines both into a single Prometheus Summary metric.
  */
-public class LatencyMetricGroupSummaryCollector implements MBeanGroupMetricFamilyCollector {
+public class LatencyMetricGroupSummaryCollector extends MBeanGroupMetricFamilyCollector {
     static class LatencyMetricGroup {
         final NamedObject<SamplingCounting> latencyTimer;
         final NamedObject<JmxCounterMBean> totalLatencyCounter; // totalLatency is a sum of all latency values, represented as a Counter

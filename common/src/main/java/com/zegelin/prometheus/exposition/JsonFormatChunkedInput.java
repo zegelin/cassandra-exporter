@@ -22,7 +22,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
+public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
     private enum State {
         HEADER,
         METRIC_FAMILY,
@@ -106,6 +106,10 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
             void write(final ByteBuf buffer) {
                 buffer.writeByte(encoded);
             }
+        }
+
+        private static void writeNull(final ByteBuf buffer) {
+            ByteBufUtil.writeAscii(buffer, "null");
         }
 
         private static void writeAsciiString(final ByteBuf buffer, final String key) {
@@ -226,7 +230,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
 
         class MetricVisitor implements MetricFamilyVisitor<Function<ByteBuf, Boolean>> {
             private <T extends Metric> Function<ByteBuf, Boolean> metricWriter(final MetricFamily<T> metricFamily, final BiConsumer<T, ByteBuf> valueWriter) {
-                final Iterator<T> metricIterator = metricFamily.metrics.iterator();
+                final Iterator<T> metricIterator = metricFamily.metrics().iterator();
 
                 return (buffer) -> {
                     if (metricIterator.hasNext()) {
@@ -234,7 +238,11 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
 
                         Json.Token.OBJECT_START.write(buffer);
                         Json.writeObjectKey(buffer, "labels");
-                        buffer.writeBytes(metric.labels.asJSONFormatUTF8EncodedByteBuf().slice());
+                        if (metric.labels != null) {
+                            buffer.writeBytes(metric.labels.asJSONFormatUTF8EncodedByteBuf().slice());
+                        } else {
+                            Json.writeNull(buffer);
+                        }
 
                         Json.Token.COMMA.write(buffer);
 
@@ -455,7 +463,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
     }
 
     @Override
-    public HttpContent readChunk(final ChannelHandlerContext ctx) throws Exception {
+    public ByteBuf readChunk(final ChannelHandlerContext ctx) throws Exception {
         final ByteBuf chunkBuffer = ctx.alloc().buffer(1024 * 1024 * 5);
 
         // add slices till we hit the chunk size (or slightly over it), or hit EOF
@@ -463,6 +471,6 @@ public class JsonFormatChunkedInput implements ChunkedInput<HttpContent> {
             nextSlice(chunkBuffer);
         }
 
-        return new DefaultHttpContent(chunkBuffer);
+        return chunkBuffer;
     }
 }

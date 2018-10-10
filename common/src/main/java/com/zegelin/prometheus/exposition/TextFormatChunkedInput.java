@@ -23,7 +23,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
+public class TextFormatChunkedInput implements ChunkedInput<ByteBuf> {
     private enum State {
         BANNER,
         METRIC_FAMILY,
@@ -189,7 +189,7 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
                 boolean needsComma = false;
 
                 for (final Labels labels : labelSets) {
-                    if (labels.isEmpty())
+                    if (labels == null || labels.isEmpty())
                         continue;
 
                     writeLabels(buffer, labels, needsComma);
@@ -220,17 +220,22 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
             }
 
             private <T extends Metric> Function<ByteBuf, Boolean> metricWriter(final MetricFamily<T> metricFamily, final BiConsumer<T, ByteBuf> writer) {
-                final Iterator<T> metricIterator = metricFamily.metrics.iterator();
+                try {
+                    final Iterator<T> metricIterator = metricFamily.metrics().iterator();
 
-                return (buffer) -> {
-                    if (metricIterator.hasNext()) {
-                        writer.accept(metricIterator.next(), buffer);
+                    return (buffer) -> {
+                        if (metricIterator.hasNext()) {
+                            writer.accept(metricIterator.next(), buffer);
 
-                        return true;
-                    }
+                            return true;
+                        }
 
-                    return false;
-                };
+                        return false;
+                    };
+
+                } catch (Exception e) {
+                    throw e;
+                }
             }
 
             @Override
@@ -349,14 +354,19 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
     }
 
     @Override
-    public HttpContent readChunk(final ChannelHandlerContext ctx) throws Exception {
+    public ByteBuf readChunk(final ChannelHandlerContext ctx) throws Exception {
         final ByteBuf chunkBuffer = ctx.alloc().buffer(1024 * 1024 * 5);
 
         // add slices till we hit the chunk size (or slightly over it), or hit EOF
         while (chunkBuffer.readableBytes() < 1024 * 1024 && state != State.EOF) {
-            nextSlice(chunkBuffer);
+            try {
+                nextSlice(chunkBuffer);
+
+            } catch (Exception e) {
+                throw e;
+            }
         }
 
-        return new DefaultHttpContent(chunkBuffer);
+        return chunkBuffer;
     }
 }

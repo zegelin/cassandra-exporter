@@ -1,6 +1,9 @@
 package com.zegelin.prometheus.domain;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class UntypedMetricFamily extends MetricFamily<UntypedMetricFamily.Untyped> {
@@ -8,9 +11,20 @@ public class UntypedMetricFamily extends MetricFamily<UntypedMetricFamily.Untype
         super(name, help, metrics);
     }
 
+    private UntypedMetricFamily(final String name, final String help, final Supplier<Stream<Untyped>> metricsStreamSupplier) {
+        super(name, help, metricsStreamSupplier);
+    }
+
     @Override
     public <R> R accept(final MetricFamilyVisitor<R> visitor) {
         return visitor.visit(this);
+    }
+
+    @Override
+    public MetricFamily<Untyped> cache() {
+        final List<Untyped> metrics = metrics().collect(Collectors.toList());
+
+        return new UntypedMetricFamily(name, help, metrics::stream);
     }
 
     public static class Untyped extends NumericMetric {

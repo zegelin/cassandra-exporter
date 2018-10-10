@@ -3,19 +3,32 @@ package com.zegelin.prometheus.domain;
 import com.google.common.base.MoreObjects;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 public abstract class MetricFamily<T extends Metric> {
     public final String name, help;
-    public final Stream<T> metrics;
+    private Supplier<Stream<T>> metricsStreamSupplier;
 
     protected MetricFamily(final String name, final String help, final Stream<T> metrics) {
         this.name = name;
         this.help = help;
-        this.metrics = metrics;
+        this.metricsStreamSupplier = () -> metrics;
+    }
+
+    public MetricFamily(final String name, final String help, final Supplier<Stream<T>> metricsStreamSupplier) {
+        this.name = name;
+        this.help = help;
+        this.metricsStreamSupplier = metricsStreamSupplier;
     }
 
     public abstract <R> R accept(final MetricFamilyVisitor<R> visitor);
+
+    public abstract MetricFamily<T> cache();
+
+    public Stream<T> metrics() {
+        return metricsStreamSupplier.get();
+    }
 
     @Override
     public boolean equals(final Object o) {

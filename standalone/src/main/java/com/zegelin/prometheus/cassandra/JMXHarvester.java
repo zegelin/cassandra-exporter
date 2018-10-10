@@ -3,17 +3,11 @@ package com.zegelin.prometheus.cassandra;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
-import org.apache.cassandra.gms.GossiperMBean;
-import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
-import org.apache.cassandra.service.StorageServiceMBean;
+import com.zegelin.prometheus.cassandra.collector.RemoteGossiperMBeanMetricFamilyCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.management.*;
-import java.lang.management.BufferPoolMXBean;
-import java.lang.management.MemoryMXBean;
-import java.lang.management.MemoryPoolMXBean;
-import java.lang.management.OperatingSystemMXBean;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -28,13 +22,15 @@ public class JMXHarvester extends Harvester {
     @SuppressWarnings("FieldCanBeLocal")
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 
-    JMXHarvester(final MBeanServerConnection mBeanServerConnection, final HarvesterOptions options) {
-        super(new RemoteMetadataFactory(), options);
+    JMXHarvester(final MBeanServerConnection mBeanServerConnection, final MetadataFactory metadataFactory, final HarvesterOptions options) {
+        super(metadataFactory, options);
 
         this.mBeanServerConnection = mBeanServerConnection;
 
         // periodically scan for new/destroyed MBeans
         scheduledExecutorService.scheduleWithFixedDelay(this::reconcileMBeans, 0, 30, TimeUnit.SECONDS);
+
+        addCollectorFactory(RemoteGossiperMBeanMetricFamilyCollector.factory(metadataFactory));
     }
 
     private Set<ObjectInstance> currentMBeans = ImmutableSet.of();
