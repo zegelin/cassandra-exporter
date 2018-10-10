@@ -86,7 +86,7 @@ public class MemoryPoolMXBeanMetricFamilyCollector extends MBeanGroupMetricFamil
 
         return Stream.of(
                 new GaugeMetricFamily("cassandra_jvm_memory_pool_initial_bytes", "Initial size of the memory pool.", initialBytesMetrics.build()),
-                new GaugeMetricFamily("cassandra_jvm_memory_pool_used_bytes", null, usedBytesMetrics.build()),
+                new GaugeMetricFamily("cassandra_jvm_memory_pool_used_bytes", "Current memory pool usage.", usedBytesMetrics.build()),
                 new GaugeMetricFamily("cassandra_jvm_memory_pool_committed_bytes", null, committedBytesMetrics.build()),
                 new GaugeMetricFamily("cassandra_jvm_memory_pool_maximum_bytes", "Maximum size of the memory pool.", maximumBytesMetrics.build())
         );

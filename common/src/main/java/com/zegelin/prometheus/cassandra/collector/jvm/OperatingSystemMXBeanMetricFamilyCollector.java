@@ -37,23 +37,26 @@ public class OperatingSystemMXBeanMetricFamilyCollector extends MBeanGroupMetric
     public Stream<MetricFamily> collect() {
         final Stream.Builder<MetricFamily> metricFamilies = Stream.builder();
 
-        metricFamilies.add(new GaugeMetricFamily("cassandra_os_1m_load_average", "1 minute system load average.", Stream.of(new NumericMetric(Labels.of(), neg1ToNaN((float) operatingSystemMXBean.getSystemLoadAverage())))));
+        metricFamilies.add(new GaugeMetricFamily("cassandra_os_1m_load_average", "1 minute system load average (as seen by the Cassandra JVM process).", Stream.of(new NumericMetric(null, neg1ToNaN((float) operatingSystemMXBean.getSystemLoadAverage())))));
 
         if (operatingSystemMXBean instanceof UnixOperatingSystemMXBean) {
             final UnixOperatingSystemMXBean unixOperatingSystemMXBean = (UnixOperatingSystemMXBean) operatingSystemMXBean;
 
-            metricFamilies.add(new GaugeMetricFamily("cassandra_process_maximum_file_descriptors", "Maximum number of file descriptors.", Stream.of(new NumericMetric(Labels.of(), (float) unixOperatingSystemMXBean.getMaxFileDescriptorCount()))));
-            metricFamilies.add(new GaugeMetricFamily("cassandra_process_open_file_descriptors", "Current number of in-use file descriptors.", Stream.of(new NumericMetric(Labels.of(), (float) unixOperatingSystemMXBean.getOpenFileDescriptorCount()))));
+            metricFamilies.add(new GaugeMetricFamily("cassandra_process_maximum_file_descriptors", "Maximum number of file descriptors that can be opened by the Cassandra JVM process.", Stream.of(new NumericMetric(null, (float) unixOperatingSystemMXBean.getMaxFileDescriptorCount()))));
+            metricFamilies.add(new GaugeMetricFamily("cassandra_process_open_file_descriptors", "Current number of open file descriptors in the Cassandra JVM process.", Stream.of(new NumericMetric(null, (float) unixOperatingSystemMXBean.getOpenFileDescriptorCount()))));
 
-            metricFamilies.add(new GaugeMetricFamily("cassandra_process_vm_committed_bytes", null, Stream.of(new NumericMetric(Labels.of(), neg1ToNaN((float) unixOperatingSystemMXBean.getCommittedVirtualMemorySize())))));
+            metricFamilies.add(new GaugeMetricFamily("cassandra_process_vm_committed_bytes", "Amount of virtual memory that is guaranteed to be available to the Cassandra JVM process.", Stream.of(new NumericMetric(null, neg1ToNaN((float) unixOperatingSystemMXBean.getCommittedVirtualMemorySize())))));
 
-            metricFamilies.add(new GaugeMetricFamily("cassandra_process_cpu_load_ratio", null, Stream.of(new NumericMetric(Labels.of(), neg1ToNaN((float) unixOperatingSystemMXBean.getProcessCpuLoad())))));
-            metricFamilies.add(new GaugeMetricFamily("cassandra_process_cpu_time_seconds", null, Stream.of(new NumericMetric(Labels.of(), nanosecondsToSeconds(neg1ToNaN((float) unixOperatingSystemMXBean.getProcessCpuTime()))))));
+            metricFamilies.add(new GaugeMetricFamily("cassandra_process_recent_cpu_load_ratio", "\"Recent\" (as defined by the JVM) CPU usage for the Cassandra JVM process.", Stream.of(new NumericMetric(null, neg1ToNaN((float) unixOperatingSystemMXBean.getProcessCpuLoad())))));
+            metricFamilies.add(new GaugeMetricFamily("cassandra_process_cpu_seconds_total", "Cumulative CPU time used by the Cassandra JVM process.", Stream.of(new NumericMetric(null, nanosecondsToSeconds(neg1ToNaN((float) unixOperatingSystemMXBean.getProcessCpuTime()))))));
 
-            metricFamilies.add(new GaugeMetricFamily("cassandra_os_free_memory_bytes", null, Stream.of(new NumericMetric(Labels.of(), (float) unixOperatingSystemMXBean.getFreePhysicalMemorySize()))));
-            metricFamilies.add(new GaugeMetricFamily("cassandra_os_free_swap_bytes", null, Stream.of(new NumericMetric(Labels.of(), (float) unixOperatingSystemMXBean.getFreeSwapSpaceSize()))));
+            metricFamilies.add(new GaugeMetricFamily("cassandra_os_memory_bytes_total", "Total physical memory available (as seen by the Cassandra JVM process).", Stream.of(new NumericMetric(null, (float) unixOperatingSystemMXBean.getTotalPhysicalMemorySize()))));
+            metricFamilies.add(new GaugeMetricFamily("cassandra_os_free_memory_bytes", "Amount of free physical memory available (as seen by the Cassandra JVM process).", Stream.of(new NumericMetric(null, (float) unixOperatingSystemMXBean.getFreePhysicalMemorySize()))));
 
-            metricFamilies.add(new GaugeMetricFamily("cassandra_os_cpu_load_ratio", null, Stream.of(new NumericMetric(Labels.of(), neg1ToNaN((float) unixOperatingSystemMXBean.getSystemCpuLoad())))));
+            metricFamilies.add(new GaugeMetricFamily("cassandra_os_swap_bytes_total", "Total swap space available (as seen by the Cassandra JVM process).", Stream.of(new NumericMetric(null, (float) unixOperatingSystemMXBean.getTotalSwapSpaceSize()))));
+            metricFamilies.add(new GaugeMetricFamily("cassandra_os_free_swap_bytes", "Amount of free swap space available (as seen by the Cassandra JVM process).", Stream.of(new NumericMetric(null, (float) unixOperatingSystemMXBean.getFreeSwapSpaceSize()))));
+
+            metricFamilies.add(new GaugeMetricFamily("cassandra_os_recent_cpu_load_ratio", "\"Recent\" (as defined by the JVM) CPU usage for the system (as seen by the Cassandra JVM process).", Stream.of(new NumericMetric(null, neg1ToNaN((float) unixOperatingSystemMXBean.getSystemCpuLoad())))));
         }
 
         return metricFamilies.build();

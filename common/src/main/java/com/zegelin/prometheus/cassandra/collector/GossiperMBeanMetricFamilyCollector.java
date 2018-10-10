@@ -23,7 +23,7 @@ public abstract class GossiperMBeanMetricFamilyCollector extends MBeanGroupMetri
 
         return Stream.of(
                 new GaugeMetricFamily("cassandra_endpoint_generation", "Current endpoint generation number.", generationNumberMetrics.build()),
-                new CounterMetricFamily("cassandra_endpoint_downtime_total_seconds", "Endpoint downtime (since server start).", downtimeMetrics.build()),
+                new CounterMetricFamily("cassandra_endpoint_downtime_seconds_total", "Endpoint downtime (since server start).", downtimeMetrics.build()),
                 new GaugeMetricFamily("cassandra_endpoint_active", "Endpoint activeness (0 = down, 1 = up).", activeMetrics.build())
         );
     }

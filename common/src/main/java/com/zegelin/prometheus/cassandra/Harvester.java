@@ -1,10 +1,13 @@
 package com.zegelin.prometheus.cassandra;
 
+import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableMap;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
+import com.zegelin.prometheus.domain.CounterMetricFamily;
 import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
+import com.zegelin.prometheus.domain.NumericMetric;
 import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
 import org.apache.cassandra.service.StorageServiceMBean;
 import org.slf4j.Logger;
@@ -13,12 +16,15 @@ import org.slf4j.LoggerFactory;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import static com.zegelin.prometheus.cassandra.CassandraObjectNames.ENDPOINT_SNITCH_INFO_MBEAN_NAME;
 import static com.zegelin.prometheus.cassandra.CassandraObjectNames.STORAGE_SERVICE_MBEAN_NAME;
+import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.nanosecondsToSeconds;
 
 public abstract class Harvester {
     private static final Logger logger = LoggerFactory.getLogger(Harvester.class);
@@ -132,11 +138,15 @@ public abstract class Harvester {
     private final Set<Exclusion> exclusions;
     private final Set<GlobalLabel> enabledGlobalLabels;
 
+    private final boolean collectorTimingEnabled;
+    private final Map<String, Stopwatch> collectionTimes = new ConcurrentHashMap<>();
+
 
     protected Harvester(final MetadataFactory metadataFactory, final HarvesterOptions options) {
         this.collectorFactories = new ArrayList<>(new FactoriesSupplier(metadataFactory, options).get());
         this.exclusions = options.exclusions;
         this.enabledGlobalLabels = options.globalLabels;
+        this.collectorTimingEnabled = options.collectorTimingEnabled;
     }
 
     protected void addCollectorFactory(final MBeanGroupMetricFamilyCollector.Factory factory) {
@@ -214,16 +224,49 @@ public abstract class Harvester {
     }
 
     public Stream<MetricFamily> collect() {
-        return mBeanCollectorsByName.entrySet().parallelStream().flatMap((e) -> {
+        final Stream<MetricFamily> metricFamilies = mBeanCollectorsByName.entrySet().parallelStream().flatMap((e) -> {
+            final Stopwatch stopwatch = (collectorTimingEnabled ?
+                    collectionTimes.computeIfAbsent(e.getKey(), (k) -> Stopwatch.createUnstarted()) :
+                    null);
+
             try {
+                if (stopwatch != null) {
+                    stopwatch.start();
+                }
+
                 return e.getValue().collect();
 
             } catch (final Exception exception) {
                 logger.warn("Metrics collector {} failed to collect. Skipping.", e.getKey(), exception);
 
                 return Stream.empty();
+
+            } finally {
+                if (stopwatch != null) {
+                    stopwatch.stop();
+                }
             }
         });
+
+        if (collectorTimingEnabled) {
+            return Stream.concat(metricFamilies, collectTimings());
+
+        } else {
+            return metricFamilies;
+        }
+    }
+
+    private Stream<MetricFamily> collectTimings() {
+        final Stream<NumericMetric> timingMetrics = collectionTimes.entrySet().stream()
+                .map(e -> new Object() {
+                    final String metricFamilyName = e.getKey();
+                    final long cumulativeCollectionTime = e.getValue().elapsed(TimeUnit.NANOSECONDS);
+                })
+                .map(e -> new NumericMetric(Labels.of("collector", e.metricFamilyName), nanosecondsToSeconds(e.cumulativeCollectionTime)));
+
+        return Stream.of(
+                new CounterMetricFamily("cassandra_exporter_collection_time_seconds", "Time taken to run each metrics collector.", timingMetrics)
+        );
     }
 
     public Labels globalLabels() {

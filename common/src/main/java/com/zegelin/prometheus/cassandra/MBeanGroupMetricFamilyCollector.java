@@ -10,7 +10,7 @@ public abstract class MBeanGroupMetricFamilyCollector {
     /**
      * @return the name of the collector. Collectors with the same name will be merged together {@see merge}.
      */
-    protected String name() {
+    public String name() {
         return this.getClass().getCanonicalName();
     }
 
@@ -20,26 +20,26 @@ public abstract class MBeanGroupMetricFamilyCollector {
      * @param other The other {@link MBeanGroupMetricFamilyCollector} to merge with.
      * @return a new {@link MBeanGroupMetricFamilyCollector} that is the combinator of this {@link MBeanGroupMetricFamilyCollector} and {@param other}
      */
-    protected MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector other) {
+    public MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector other) {
         throw new IllegalStateException(String.format("Merging of %s and %s not implemented.", this, other));
     }
 
     /**
      * @return a new MBeanGroupMetricFamilyCollector with the named MBean removed, or null if the collector is empty.
      */
-    protected MBeanGroupMetricFamilyCollector removeMBean(final ObjectName mBeanName) {
+    public MBeanGroupMetricFamilyCollector removeMBean(final ObjectName mBeanName) {
         return null;
     }
 
     /**
      * @return a {@link Stream} of {@link MetricFamily}s that contain the metrics collected by this collector.
      */
-    protected abstract Stream<MetricFamily> collect();
+    public abstract Stream<MetricFamily> collect();
 
 
     protected interface Factory {
         /**
-         * Create a {@link MBeanGroupMetricFamilyCollector} for the given MBean, or null if this factory
+         * Create a {@link MBeanGroupMetricFamilyCollector} for the given MBean, or null if this cache
          * doesn't support the given MBean.
          *
          * @return the MBeanGroupMetricFamilyCollector for the given MBean, or null

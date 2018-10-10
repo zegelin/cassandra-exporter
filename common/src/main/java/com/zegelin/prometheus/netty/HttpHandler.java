@@ -13,7 +13,9 @@ import com.zegelin.prometheus.domain.MetricFamily;
 import com.zegelin.prometheus.exposition.JsonFormatChunkedInput;
 import com.zegelin.prometheus.exposition.TextFormatChunkedInput;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -78,14 +80,16 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
     protected void channelRead0(final ChannelHandlerContext ctx, final FullHttpRequest request) throws Exception {
         final QueryStringDecoder queryString = new QueryStringDecoder(request.getUri());
 
+        ChannelFuture lastWriteFuture = null;
+
         try {
             switch (queryString.path()) {
                 case "/":
-                    sendRoot(ctx, request);
+                    lastWriteFuture = sendRoot(ctx, request);
                     return;
 
                 case "/metrics":
-                    sendMetrics(ctx, request, queryString);
+                    lastWriteFuture = sendMetrics(ctx, request, queryString);
                     return;
 
                 default:
@@ -93,17 +97,28 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
             }
 
         } catch (final HttpException e) {
-            sendError(ctx, e.responseStatus, e.getMessage());
+            lastWriteFuture = sendError(ctx, e.responseStatus, e.getMessage());
 
         } catch (final Exception e) {
             logger.error("Exception while processing HTTP request {}.", request, e);
 
-            sendError(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "An internal server error occurred while processing the request for this URI.");
+            lastWriteFuture = sendError(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "An internal server error occurred while processing the request for this URI.");
+
+        } finally {
+            if (lastWriteFuture != null) {
+                lastWriteFuture.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE)
+                        .addListener(ChannelFutureListener.CLOSE);
+            }
         }
     }
 
+    @Override
+    public void exceptionCaught(final ChannelHandlerContext ctx, final Throwable cause) throws Exception {
+        super.exceptionCaught(ctx, cause);
+    }
+
     private void checkRequestMethod(final HttpRequest request, final HttpMethod... methods) {
-        for (HttpMethod method : methods) {
+        for (final HttpMethod method : methods) {
             if (method == request.getMethod()) {
                 return;
             }
@@ -188,29 +203,27 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
         return map;
     }
 
-    private void sendError(final ChannelHandlerContext ctx, final HttpResponseStatus status, final String message) {
+    private ChannelFuture sendError(final ChannelHandlerContext ctx, final HttpResponseStatus status, final String message) {
         final FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, ByteBufUtil.writeUtf8(ctx.alloc(), message));
 
         response.headers().add(HttpHeaders.Names.CONTENT_TYPE, "text/html");
 
-        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        return ctx.writeAndFlush(response);
     }
 
-    private void sendRoot(final ChannelHandlerContext ctx, final HttpRequest request) {
+    private ChannelFuture sendRoot(final ChannelHandlerContext ctx, final HttpRequest request) {
         checkRequestMethod(request, HttpMethod.GET, HttpMethod.HEAD);
         checkAndGetPreferredMediaTypes(request, TEXT_HTML);
 
-        final DefaultFullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, ROOT_DOCUMENT.slice());
+        final ByteBuf content = request.getMethod() == HttpMethod.GET ? ROOT_DOCUMENT.slice() : ctx.alloc().buffer(0, 0);
+
+        final DefaultFullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, content);
         response.headers().add(HttpHeaders.Names.CONTENT_TYPE, MediaType.HTML_UTF_8);
 
-        ctx.write(response);
-
-        if (request.getMethod() == HttpMethod.GET) {
-            ctx.writeAndFlush(new DefaultLastHttpContent()).addListener(ChannelFutureListener.CLOSE);
-        }
+        return ctx.writeAndFlush(response);
     }
 
-    private void sendMetrics(final ChannelHandlerContext ctx, final FullHttpRequest request, final QueryStringDecoder queryString) {
+    private ChannelFuture sendMetrics(final ChannelHandlerContext ctx, final FullHttpRequest request, final QueryStringDecoder queryString) {
         checkRequestMethod(request, HttpMethod.GET, HttpMethod.HEAD);
 
         final List<MediaType> acceptedMediaTypes = Optional.ofNullable(queryString.parameters().get("x-accept"))
@@ -264,37 +277,36 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
             final MediaType supportedType = preferredMediaType.getKey();
 
             final DefaultHttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+            response.headers().set(HttpHeaders.Names.TRANSFER_ENCODING, HttpHeaders.Values.CHUNKED);
 
             final Stream<MetricFamily> metricFamilyStream = harvester.collect();
             final Instant timestamp = Instant.now();
             final Labels globalLabels = harvester.globalLabels();
 
+            ChannelFuture lastWriteFuture = null;
+
             if (supportedType.equals(TEXT_FORMAT_004_TYPE) || supportedType.equals(TEXT_PLAIN)) {
                 response.headers().set(HttpHeaders.Names.CONTENT_TYPE, TEXT_FORMAT_004_TYPE);
 
-                ctx.write(response);
+                lastWriteFuture = ctx.writeAndFlush(response);
 
                 if (request.getMethod() == HttpMethod.GET) {
-                    ctx.write(new TextFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp));
+                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new TextFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp)));
                 }
 
-                ctx.writeAndFlush(new DefaultLastHttpContent()).addListener(ChannelFutureListener.CLOSE);
-
-                return;
+                return lastWriteFuture;
             }
 
             if (supportedType.equals(APPLICATION_JSON)) {
                 response.headers().set(HttpHeaders.Names.CONTENT_TYPE, MediaType.JSON_UTF_8);
 
-                ctx.write(response);
+                lastWriteFuture = ctx.writeAndFlush(response);
 
                 if (request.getMethod() == HttpMethod.GET) {
-                    ctx.write(new JsonFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp));
+                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new JsonFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp)));
                 }
 
-                ctx.writeAndFlush(new DefaultLastHttpContent()).addListener(ChannelFutureListener.CLOSE);
-
-                return;
+                return lastWriteFuture;
             }
         }
 

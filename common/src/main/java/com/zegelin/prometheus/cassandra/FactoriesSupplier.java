@@ -8,6 +8,7 @@ import com.google.common.collect.ImmutableMap;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector.Factory;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
+import com.zegelin.prometheus.cassandra.collector.CachingCollector;
 import com.zegelin.prometheus.cassandra.collector.FailureDetectorMBeanMetricFamilyCollector;
 import com.zegelin.prometheus.cassandra.collector.LatencyMetricGroupSummaryCollector;
 import com.zegelin.prometheus.cassandra.collector.StorageServiceMBeanMetricFamilyCollector;
@@ -27,6 +28,7 @@ import java.util.stream.Collectors;
 
 import static com.zegelin.jmx.ObjectNames.format;
 import static com.zegelin.prometheus.cassandra.CollectorFunctions.*;
+import static com.zegelin.prometheus.cassandra.collector.CachingCollector.cache;
 
 @SuppressWarnings("SameParameterValue")
 public class FactoriesSupplier implements Supplier<List<Factory>> {
@@ -45,7 +47,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
             Map<String, String> apply(final Map<String, String> keyPropertyList);
         }
 
-        private final List<LabelMaker> labelMakers = new ArrayList<>();
+        private final List<LabelMaker> labelMakers = new LinkedList<>();
 
 
         FactoryBuilder(final CollectorConstructor collectorConstructor, final QueryExp objectNameQuery, final String metricFamilyName) {
@@ -401,18 +403,36 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     }
 
 
-    private static <T> FunctionalMetricFamilyCollector.CollectorFunction<T> cache(final FunctionalMetricFamilyCollector.CollectorFunction<T> fn, final long duration, final TimeUnit unit) {
-        final LoadingCache<FunctionalMetricFamilyCollector.LabeledObjectGroup<T>, List<MetricFamily>> cache = CacheBuilder.newBuilder()
-                .expireAfterWrite(duration, unit)
-                .build(new CacheLoader<FunctionalMetricFamilyCollector.LabeledObjectGroup<T>, List<MetricFamily>>() {
-                    @Override
-                    public List<MetricFamily> load(final FunctionalMetricFamilyCollector.LabeledObjectGroup<T> key) throws Exception {
-                        return fn.apply(key).map(MetricFamily::cache).collect(Collectors.toList()); // store Stream as a List, since Streams can't be replayed
-                    }
-                });
+//    private static <T> FunctionalMetricFamilyCollector.CollectorFunction<T> cache(final FunctionalMetricFamilyCollector.CollectorFunction<T> fn, final long duration, final TimeUnit unit) {
+//        final LoadingCache<FunctionalMetricFamilyCollector.LabeledObjectGroup<T>, List<MetricFamily>> cache = CacheBuilder.newBuilder()
+//                .expireAfterWrite(duration, unit)
+//                .build(new CacheLoader<FunctionalMetricFamilyCollector.LabeledObjectGroup<T>, List<MetricFamily>>() {
+//                    @Override
+//                    public List<MetricFamily> load(final FunctionalMetricFamilyCollector.LabeledObjectGroup<T> key) throws Exception {
+//                        return fn.apply(key).map(MetricFamily::cache).collect(Collectors.toList()); // store Stream as a List, since Streams can't be replayed
+//                    }
+//                });
+//
+//        return labeledObjectGroup -> cache.getUnchecked(labeledObjectGroup).stream();
+//    }
 
-        return labeledObjectGroup -> cache.getUnchecked(labeledObjectGroup).stream();
-    }
+//    private static <T> Factory cache(final Factory cache) {
+//        return mBean -> {
+//            final MBeanGroupMetricFamilyCollector collector = cache.createCollector(mBean);
+//
+//            if (collector == null) {
+//                return null;
+//            }
+//
+//            return new MBeanGroupMetricFamilyCollector() {
+//
+//                @Override
+//                public Stream<MetricFamily> collect() {
+//                    return null;
+//                }
+//            }
+//        }
+//    }
 
 
     @Override
@@ -420,12 +440,12 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         final ImmutableList.Builder<Factory> builder = ImmutableList.builder();
 
         builder.add(FailureDetectorMBeanMetricFamilyCollector.factory(metadataFactory));
-        builder.add(StorageServiceMBeanMetricFamilyCollector.factory(metadataFactory));
+        builder.add(cache(StorageServiceMBeanMetricFamilyCollector.factory(metadataFactory), 5, TimeUnit.MINUTES));
 
         builder.add(MemoryPoolMXBeanMetricFamilyCollector.FACTORY);
         builder.add(GarbageCollectorMXBeanMetricFamilyCollector.FACTORY);
         builder.add(BufferPoolMXBeanMetricFamilyCollector.FACTORY);
-        builder.add(OperatingSystemMXBeanMetricFamilyCollector.FACTORY);
+        builder.add(cache(OperatingSystemMXBeanMetricFamilyCollector.FACTORY, 5, TimeUnit.MINUTES));
         builder.add(ThreadMXBeanMetricFamilyCollector.factory(perThreadTimingEnabled));
 
 
@@ -636,10 +656,10 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
             builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewLockAcquireTime", "view_lock_acquisition_seconds", null));
             builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewReadTime", "view_read_seconds", null));
 
-            builder.add(tableMetricFactory(functionalCollector(cache(numericGaugeAsGauge(), 1, TimeUnit.MINUTES)), "SnapshotsSize", "snapshots_size_total_bytes", null)); // TODO: maybe make configurable
+            builder.add(cache(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "SnapshotsSize", "snapshots_size_bytes_total", null), 5, TimeUnit.MINUTES)); // TODO: maybe make configurable
 
-            builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "RowCacheHitOutOfRange", "row_cache_misses", null, ImmutableMap.of("miss_type", "out_of_range")));
             builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "RowCacheHit", "row_cache_hits", null));
+            builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "RowCacheHitOutOfRange", "row_cache_misses", null, ImmutableMap.of("miss_type", "out_of_range")));
             builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "RowCacheMiss", "row_cache_misses", null, ImmutableMap.of("miss_type", "miss")));
 
             builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasPrepareLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_prepare")));

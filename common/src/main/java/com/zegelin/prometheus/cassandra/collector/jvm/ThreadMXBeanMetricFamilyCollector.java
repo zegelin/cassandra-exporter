@@ -45,13 +45,13 @@ public class ThreadMXBeanMetricFamilyCollector extends  MBeanGroupMetricFamilyCo
             final int daemonThreadCount = threadMXBean.getDaemonThreadCount();
             final int userThreadCount = threadCount - daemonThreadCount;
 
-            metricFamilies.add(new GaugeMetricFamily("cassandra_jvm_thread_count", null, Stream.of(
+            metricFamilies.add(new GaugeMetricFamily("cassandra_jvm_thread_count", "Current number of live threads.", Stream.of(
                     new NumericMetric(USER_THREAD_COUNT_LABELS, userThreadCount),
                     new NumericMetric(DAEMON_THREAD_COUNT_LABELS, daemonThreadCount)
             )));
         }
 
-        metricFamilies.add(new GaugeMetricFamily("cassandra_jvm_threads_started_total", null, Stream.of(new NumericMetric(Labels.of(), threadMXBean.getTotalStartedThreadCount()))));
+        metricFamilies.add(new GaugeMetricFamily("cassandra_jvm_threads_started_total", "Cumulative number of started threads (since JVM start).", Stream.of(new NumericMetric(null, threadMXBean.getTotalStartedThreadCount()))));
 
         if (perThreadTimingEnabled && threadMXBean instanceof com.sun.management.ThreadMXBean && threadMXBean.isThreadCpuTimeEnabled()) {
             final com.sun.management.ThreadMXBean threadMXBeanEx = (com.sun.management.ThreadMXBean) threadMXBean;
@@ -89,7 +89,7 @@ public class ThreadMXBeanMetricFamilyCollector extends  MBeanGroupMetricFamilyCo
                 threadCpuTimeMetrics.add(new NumericMetric(userModeLabels, nanosecondsToSeconds(threadUserTime)));
             }
 
-            metricFamilies.add(new CounterMetricFamily("cassandra_jvm_thread_cpu_time_seconds_total", null, threadCpuTimeMetrics.build()));
+            metricFamilies.add(new CounterMetricFamily("cassandra_jvm_thread_cpu_time_seconds_total", "Cumulative thread CPU time (since JVM start).", threadCpuTimeMetrics.build()));
         }
 
         return metricFamilies.build();

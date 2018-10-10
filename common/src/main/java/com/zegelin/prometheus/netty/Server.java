@@ -12,10 +12,8 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.http.HttpContentCompressor;
-import io.netty.handler.codec.http.HttpObjectAggregator;
-import io.netty.handler.codec.http.HttpRequestDecoder;
-import io.netty.handler.codec.http.HttpResponseEncoder;
+import io.netty.handler.codec.http.*;
+import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.stream.ChunkedWriteHandler;
 
 import java.net.InetSocketAddress;
@@ -35,9 +33,9 @@ public class Server {
 
         @Override
         public void initChannel(final SocketChannel ch) {
-            ch.pipeline().addLast(new HttpRequestDecoder())
+            ch.pipeline()
+                    .addLast(new HttpServerCodec())
                     .addLast(new HttpObjectAggregator(1048576))
-                    .addLast(new HttpResponseEncoder())
                     .addLast(new HttpContentCompressor())
                     .addLast(new ChunkedWriteHandler())
                     .addLast(new HttpHandler(harvester, helpExposition));

@@ -23,7 +23,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
+public class TextFormatChunkedInput implements ChunkedInput<ByteBuf> {
     private enum State {
         BANNER,
         METRIC_FAMILY,
@@ -189,7 +189,7 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
                 boolean needsComma = false;
 
                 for (final Labels labels : labelSets) {
-                    if (labels.isEmpty())
+                    if (labels == null || labels.isEmpty())
                         continue;
 
                     writeLabels(buffer, labels, needsComma);
@@ -354,7 +354,7 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
     }
 
     @Override
-    public HttpContent readChunk(final ChannelHandlerContext ctx) throws Exception {
+    public ByteBuf readChunk(final ChannelHandlerContext ctx) throws Exception {
         final ByteBuf chunkBuffer = ctx.alloc().buffer(1024 * 1024 * 5);
 
         // add slices till we hit the chunk size (or slightly over it), or hit EOF
@@ -367,6 +367,6 @@ public class TextFormatChunkedInput implements ChunkedInput<HttpContent> {
             }
         }
 
-        return new DefaultHttpContent(chunkBuffer);
+        return chunkBuffer;
     }
 }

@@ -72,7 +72,7 @@ public class HarvesterOptions {
         globalLabels.remove(Harvester.GlobalLabel.HOST_ID); // remove host ID by default to avoid creating new time-series on node replace.
     }
 
-    @Option(names = {"--no-global-labels"}, arity = "0",
+    @Option(names = "--no-global-labels", arity = "0",
             description = "Disable all global labels.")
     public void setNoGlobalLabels(final boolean noGlobalLabels) {
         if (!noGlobalLabels) {
@@ -106,14 +106,17 @@ public class HarvesterOptions {
     }
 
 
-
-    @Option(names = {"--no-fast-float"},
+    @Option(names = "--no-fast-float",
             description = "Disable the use of fast float -> ascii conversion.")
     public void setNoFastFloat(final boolean noFastFloat) {
         Floats.useFastFloat = !noFastFloat;
     }
 
-    @Option(names = {"--enable-per-thread-cpu-times"},
+    @Option(names = "--enable-per-thread-cpu-times",
             description = "Collect per-thread CPU times, where each thread gets its own time-series. (EXPERIMENTAL)")
     public boolean perThreadTimingEnabled = false;
+
+    @Option(names = "--enable-collector-timing",
+            description = "Record the cumulative time taken to run each collector and export the results.")
+    public boolean collectorTimingEnabled;
 }

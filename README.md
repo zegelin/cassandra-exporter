@@ -256,33 +256,33 @@ Element                                              | Value
 ### Global Labels
 
 The exporter does attach global labels to the exported metrics.
-These may be configured with the `--global-labels` CLI option.
+These may be configured with the `--global-labels` (or disabled via `--no-global-labels) CLI option.
 
 These labels are:
 
-- `cassandra_cluster_name`
+- `cassandra_cluster`
 
-    The name of the cluster, as specified in cassandra.yaml
+    The name of the cluster, as specified in cassandra.yaml.
     
 - `cassandra_host_id`
 
-    The unique UUID of the node
+    The unique UUID of the node. _Not enabled by default_
     
 - `cassandra_node`
 
-    The IP address of the node
+    The IP address of the node.
     
 - `cassandra_datacenter`
 
-    The configured data center name of the node
+    The configured data center name of the node.
     
 - `cassandra_rack`
 
-    The configured rack name of the node
+    The configured rack name of the node.
     
 These labels allow aggregation of metrics at the cluster, data center and rack levels.
 
-While these labels could be defined in the prometheus scrape config, we feel that having these labels be automatically
+While these labels could be defined in the Prometheus scrape config, we feel that having these labels be automatically
 applied simplifies things, especially when Prometheus is monitoring multiple clusters across numerous DCs and racks.
 
 

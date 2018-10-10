@@ -41,7 +41,7 @@ public class RemoteGossiperMBeanMetricFamilyCollector extends GossiperMBeanMetri
     }
 
     @Override
-    protected MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector rawOther) {
+    public MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector rawOther) {
         if (!(rawOther instanceof RemoteGossiperMBeanMetricFamilyCollector)) {
             throw new IllegalStateException();
         }

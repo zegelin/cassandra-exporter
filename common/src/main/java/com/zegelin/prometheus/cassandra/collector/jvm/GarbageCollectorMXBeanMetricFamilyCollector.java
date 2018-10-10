@@ -73,8 +73,8 @@ public class GarbageCollectorMXBeanMetricFamilyCollector extends MBeanGroupMetri
         }
 
         return Stream.of(
-                new CounterMetricFamily("cassandra_jvm_gc_collection_count", "Total number of collections that have occurred (since server start).", collectionCountMetrics.build()),
-                new CounterMetricFamily("cassandra_jvm_gc_estimated_collection_duration_total_seconds", "Estimated accumulated collection elapsed time (since server start).", collectionDurationTotalSecondsMetrics.build()),
+                new CounterMetricFamily("cassandra_jvm_gc_collection_count", "Total number of collections that have occurred (since JVM start).", collectionCountMetrics.build()),
+                new CounterMetricFamily("cassandra_jvm_gc_estimated_collection_duration_seconds_total", "Estimated cumulative collection elapsed time (since JVM start).", collectionDurationTotalSecondsMetrics.build()),
                 new GaugeMetricFamily("cassandra_jvm_gc_last_collection_duration_seconds", "Last collection duration.", lastGCDurationSecondsMetrics.build())
         );
     }
