@@ -19,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static com.zegelin.prometheus.cassandra.CassandraObjectNames.STORAGE_SERVICE_MBEAN_NAME;
@@ -26,25 +27,28 @@ import static com.zegelin.prometheus.cassandra.CassandraObjectNames.STORAGE_SERV
 public class StorageServiceMBeanMetricFamilyCollector extends MBeanGroupMetricFamilyCollector {
     private static final Logger logger = LoggerFactory.getLogger(StorageServiceMBeanMetricFamilyCollector.class);
 
-    public static Factory factory(final MetadataFactory metadataFactory) {
+    public static Factory factory(final MetadataFactory metadataFactory, final Set<String> excludedKeyspaces) {
         return mBean -> {
             if (!STORAGE_SERVICE_MBEAN_NAME.apply(mBean.name))
                 return null;
 
-            return new StorageServiceMBeanMetricFamilyCollector((StorageServiceMBean) mBean.object, metadataFactory);
+            return new StorageServiceMBeanMetricFamilyCollector((StorageServiceMBean) mBean.object, metadataFactory, excludedKeyspaces);
         };
     }
 
     private final StorageServiceMBean storageServiceMBean;
     private final MetadataFactory metadataFactory;
+    private final Set<String> excludeSystemTables;
+
 
     private final Map<Labels, FileStore> labeledFileStores;
 
 
     private StorageServiceMBeanMetricFamilyCollector(final StorageServiceMBean storageServiceMBean,
-                                                     final MetadataFactory metadataFactory) {
+                                                     final MetadataFactory metadataFactory, final Set<String> excludeSystemTables) {
         this.storageServiceMBean = storageServiceMBean;
         this.metadataFactory = metadataFactory;
+        this.excludeSystemTables = excludeSystemTables;
 
         // determine the set of FileStores (i.e., mountpoints) for the Cassandra data/CL/cache directories
         // (which can be done once -- changing directories requires a server restart)
@@ -87,6 +91,7 @@ public class StorageServiceMBeanMetricFamilyCollector extends MBeanGroupMetricFa
 
         {
             final Stream<NumericMetric> ownershipMetricStream = metadataFactory.keyspaces().stream()
+                    .filter(keyspace -> !excludeSystemTables.contains(keyspace))
                     .flatMap(keyspace -> {
                         try {
                             return storageServiceMBean.effectiveOwnership(keyspace).entrySet().stream()

@@ -65,6 +65,10 @@ public class CachingCollector extends MBeanGroupMetricFamilyCollector {
     public MBeanGroupMetricFamilyCollector removeMBean(final ObjectName mBeanName) {
         final MBeanGroupMetricFamilyCollector newDelegate = delegate.removeMBean(mBeanName);
 
+        if (newDelegate == null) {
+            return null;
+        }
+
         return new CachingCollector(newDelegate, duration, unit);
     }
 

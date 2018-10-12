@@ -1,7 +1,6 @@
 package com.zegelin.prometheus.cassandra;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.Session;
+import com.datastax.driver.core.*;
 import com.datastax.driver.core.policies.RoundRobinPolicy;
 import com.datastax.driver.core.policies.WhiteListPolicy;
 import com.google.common.collect.ImmutableList;
@@ -92,23 +91,21 @@ public class Application implements Callable<Void> {
             final JMXConnector connector = JMXConnectorFactory.connect(jmxServiceURL, jmxEnvironment);
             mBeanServerConnection = connector.getMBeanServerConnection();
 
-            connector.addConnectionNotificationListener(new NotificationListener() {
-                @Override
-                public void handleNotification(final Notification notification, final Object handback) {
-                    if (notification.getType().equals(JMXConnectionNotification.CLOSED)) {
-                        Runtime.getRuntime().exit(-1);
-                    }
+            connector.addConnectionNotificationListener((notification, handback) -> {
+                if (notification.getType().equals(JMXConnectionNotification.CLOSED)) {
+                    Runtime.getRuntime().exit(-1);
                 }
             }, null, null);
         }
 
+        final Session session;
         final RemoteMetadataFactory remoteMetadataFactory;
         {
             if (cqlUser != null ^ cqlPassword != null) {
                 throw new ParameterException(commandSpec.commandLine(), "Both --cql-user and --cql-password are required when either is used.");
             }
 
-            final Session session = Cluster.builder()
+            session = Cluster.builder()
                     .addContactPointsWithPorts(cqlAddress)
                     .withCredentials(cqlUser, cqlPassword)
                     .withLoadBalancingPolicy(new WhiteListPolicy(new RoundRobinPolicy(), ImmutableList.of(cqlAddress)))
@@ -119,6 +116,40 @@ public class Application implements Callable<Void> {
         }
 
         final JMXHarvester harvester = new JMXHarvester(mBeanServerConnection, remoteMetadataFactory, harvesterOptions);
+
+        // register for schema change notifications
+        session.getCluster().register(new SchemaChangeListenerBase() {
+            @Override
+            public void onKeyspaceAdded(final KeyspaceMetadata keyspace) {
+                harvester.reconcileMBeans();
+            }
+
+            @Override
+            public void onKeyspaceRemoved(final KeyspaceMetadata keyspace) {
+                harvester.reconcileMBeans();
+            }
+
+            @Override
+            public void onTableAdded(final TableMetadata table) {
+                harvester.reconcileMBeans();
+            }
+
+            @Override
+            public void onTableRemoved(final TableMetadata table) {
+                harvester.reconcileMBeans();
+            }
+
+            @Override
+            public void onMaterializedViewAdded(final MaterializedViewMetadata view) {
+                harvester.reconcileMBeans();
+            }
+
+            @Override
+            public void onMaterializedViewRemoved(final MaterializedViewMetadata view) {
+                harvester.reconcileMBeans();
+            }
+        });
+
 
         Server.start(httpServerOptions.listenAddresses, harvester, httpServerOptions.helpExposition);
 

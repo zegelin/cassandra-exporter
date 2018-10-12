@@ -1,5 +1,6 @@
 package com.zegelin.prometheus.cassandra.cli;
 
+import com.google.common.collect.ImmutableSet;
 import com.zegelin.netty.Floats;
 import com.zegelin.prometheus.cassandra.FactoriesSupplier;
 import com.zegelin.prometheus.cassandra.Harvester;
@@ -15,6 +16,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class HarvesterOptions {
+    private static final Set<String> CASSANDRA_SYSTEM_KEYSPACES = ImmutableSet.of("system", "system_traces", "system_auth", "system_schema", "system_distributed");
+
     private final Set<Path> processedExclusionFiles = new HashSet<>();
 
     @CommandLine.Spec
@@ -119,4 +122,18 @@ public class HarvesterOptions {
     @Option(names = "--enable-collector-timing",
             description = "Record the cumulative time taken to run each collector and export the results.")
     public boolean collectorTimingEnabled;
+
+
+    @Option(names = "--exclude-keyspaces")
+    public Set<String> excludedKeyspaces = new HashSet<>();
+
+    @Option(names = "--exclude-system-tables",
+            description = "Exclude system table/keyspace metrics.")
+    public void setExcludeSystemTables(final boolean excludeSystemTables) {
+        if (!excludeSystemTables) {
+            throw new IllegalStateException();
+        }
+
+        excludedKeyspaces.addAll(CASSANDRA_SYSTEM_KEYSPACES);
+    }
 }

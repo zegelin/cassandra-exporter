@@ -5,6 +5,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector.Factory;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
@@ -42,13 +43,17 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         private String help;
 
+        @FunctionalInterface
+        interface Modifier {
+            boolean modify(final Map<String, String> keyPropertyList, final Map<String, String> labels);
+        }
+
         interface LabelMaker extends Function<Map<String, String>, Map<String, String>> {
             @Override
             Map<String, String> apply(final Map<String, String> keyPropertyList);
         }
 
-        private final List<LabelMaker> labelMakers = new LinkedList<>();
-
+        private final List<Modifier> modifiers = new LinkedList<>();
 
         FactoryBuilder(final CollectorConstructor collectorConstructor, final QueryExp objectNameQuery, final String metricFamilyName) {
             this.collectorConstructor = collectorConstructor;
@@ -56,10 +61,18 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
             this.metricFamilyName = metricFamilyName;
         }
 
-        FactoryBuilder withLabelMaker(final LabelMaker labelMaker) {
-            labelMakers.add(labelMaker);
+        FactoryBuilder withModifier(final Modifier modifier) {
+            modifiers.add(modifier);
 
             return this;
+        }
+
+        FactoryBuilder withLabelMaker(final LabelMaker labelMaker) {
+            return this.withModifier((keyPropertyList, labels) -> {
+                labels.putAll(labelMaker.apply(keyPropertyList));
+
+                return true;
+            });
         }
 
         FactoryBuilder withHelp(final String help) {
@@ -81,8 +94,12 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
                 final Map<String, String> rawLabels = new HashMap<>();
                 {
-                    for (final LabelMaker labelMaker : labelMakers) {
-                        rawLabels.putAll(labelMaker.apply(keyPropertyList));
+                    for (final Modifier modifier : modifiers) {
+                        if (!modifier.modify(keyPropertyList, rawLabels)) {
+                            return null;
+                        }
+
+//                        rawLabels.putAll(labelMaker.apply(keyPropertyList));
                     }
                 }
 
@@ -101,11 +118,13 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     private final MetadataFactory metadataFactory;
     private final boolean perThreadTimingEnabled;
     private final Set<TableLabels> tableLabels;
+    private final Set<String> excludedKeyspaces;
 
     public FactoriesSupplier(final MetadataFactory metadataFactory, final HarvesterOptions options) {
         this.metadataFactory = metadataFactory;
         this.perThreadTimingEnabled = options.perThreadTimingEnabled;
         this.tableLabels = options.tableLabels;
+        this.excludedKeyspaces = options.excludedKeyspaces;
     }
 
 
@@ -263,7 +282,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         return new FactoryBuilder(collectorConstructor, objectNameQuery, metricFamilyName)
                 .withHelp(help)
-                .withLabelMaker(keyPropertyList -> {
+                .withModifier((keyPropertyList, labels) -> {
                     final String keyspaceName = keyPropertyList.get("keyspace");
                     final String tableName, indexName;
                     {
@@ -273,38 +292,41 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
                         indexName = (nameParts.length > 1) ? nameParts[1] : null;
                     }
 
-                    final ImmutableMap.Builder<String, String> labelsBuilder = ImmutableMap.<String, String>builder()
-                            .putAll(extraLabels)
-                            .put("keyspace", keyspaceName);
+                    if (excludedKeyspaces.contains(keyspaceName)) {
+                        return false;
+                    }
+
+                    labels.putAll(extraLabels);
+                    labels.put("keyspace", keyspaceName);
 
                     if (indexName != null) {
-                        labelsBuilder.put("table", tableName)
-                                .put("index", indexName);
+                        labels.put("table", tableName);
+                        labels.put("index", indexName);
 
-                        LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labelsBuilder, () -> "index");
+                        LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labels, () -> "index");
 
                         final Optional<MetadataFactory.IndexMetadata> indexMetadata = metadataFactory.indexMetadata(keyspaceName, tableName, indexName);
 
                         indexMetadata.ifPresent(m -> {
-                            LabelEnum.addIfEnabled(TableLabels.INDEX_TYPE, tableLabels, labelsBuilder, () -> m.indexType().name().toLowerCase());
-                            m.customClassName().ifPresent(s -> LabelEnum.addIfEnabled(TableLabels.INDEX_CLASS, tableLabels, labelsBuilder, () -> s));
+                            LabelEnum.addIfEnabled(TableLabels.INDEX_TYPE, tableLabels, labels, () -> m.indexType().name().toLowerCase());
+                            m.customClassName().ifPresent(s -> LabelEnum.addIfEnabled(TableLabels.INDEX_CLASS, tableLabels, labels, () -> s));
                         });
 
                     } else {
-                        labelsBuilder.put("table", tableName);
+                        labels.put("table", tableName);
 
                         final Optional<MetadataFactory.TableMetadata> tableMetadata = metadataFactory.tableOrViewMetadata(keyspaceName, tableName);
 
                         tableMetadata.ifPresent(m -> {
-                            LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labelsBuilder, () -> m.isView() ? "view" : "table");
+                            LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labels, () -> m.isView() ? "view" : "table");
 
                             if (includeCompactionLabels) {
-                                LabelEnum.addIfEnabled(TableLabels.COMPACTION_STRATEGY_CLASS, tableLabels, labelsBuilder, m::compactionStrategyClassName);
+                                LabelEnum.addIfEnabled(TableLabels.COMPACTION_STRATEGY_CLASS, tableLabels, labels, m::compactionStrategyClassName);
                             }
                         });
                     }
 
-                    return labelsBuilder.build();
+                    return true;
                 })
                 .build();
     }
@@ -440,7 +462,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         final ImmutableList.Builder<Factory> builder = ImmutableList.builder();
 
         builder.add(FailureDetectorMBeanMetricFamilyCollector.factory(metadataFactory));
-        builder.add(cache(StorageServiceMBeanMetricFamilyCollector.factory(metadataFactory), 5, TimeUnit.MINUTES));
+        builder.add(cache(StorageServiceMBeanMetricFamilyCollector.factory(metadataFactory, excludedKeyspaces), 5, TimeUnit.MINUTES));
 
         builder.add(MemoryPoolMXBeanMetricFamilyCollector.FACTORY);
         builder.add(GarbageCollectorMXBeanMetricFamilyCollector.FACTORY);

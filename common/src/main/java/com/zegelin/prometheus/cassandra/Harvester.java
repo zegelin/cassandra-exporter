@@ -2,6 +2,7 @@ package com.zegelin.prometheus.cassandra;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
 import com.zegelin.prometheus.domain.CounterMetricFamily;
@@ -16,9 +17,7 @@ import org.slf4j.LoggerFactory;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -141,6 +140,11 @@ public abstract class Harvester {
     private final boolean collectorTimingEnabled;
     private final Map<String, Stopwatch> collectionTimes = new ConcurrentHashMap<>();
 
+    private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+            .setNameFormat("cassandra-exporter-harvester-defer-%d")
+            .setDaemon(true)
+            .build());
+
 
     protected Harvester(final MetadataFactory metadataFactory, final HarvesterOptions options) {
         this.collectorFactories = new ArrayList<>(new FactoriesSupplier(metadataFactory, options).get());
@@ -154,6 +158,11 @@ public abstract class Harvester {
     }
 
 
+    private void defer(final Runnable runnable) {
+        scheduledExecutorService.schedule(runnable, 1, TimeUnit.SECONDS);
+    }
+
+
     protected void registerMBean(final Object mBean, final ObjectName name) {
         maybeRegisterRequiredMBean(mBean, name);
 
@@ -161,37 +170,29 @@ public abstract class Harvester {
             return;
         }
 
-        final NamedObject<Object> namedMBean = new NamedObject<>(name, mBean);
+        defer(() -> {
+            final NamedObject<Object> namedMBean = new NamedObject<>(name, mBean);
 
-        for (final MBeanGroupMetricFamilyCollector.Factory factory : collectorFactories) {
-            try {
-                final MBeanGroupMetricFamilyCollector collector = factory.createCollector(namedMBean);
+            for (final MBeanGroupMetricFamilyCollector.Factory factory : collectorFactories) {
+                try {
+                    final MBeanGroupMetricFamilyCollector collector = factory.createCollector(namedMBean);
 
-                if (collector == null) {
-                    continue;
+                    if (collector == null) {
+                        continue;
+                    }
+
+                    if (isExcluded(collector)) {
+                        continue;
+                    }
+
+                    mBeanCollectorsByName.merge(collector.name(), collector, MBeanGroupMetricFamilyCollector::merge);
+                    mBeanNameToCollectorNameMap.put(name, collector.name());
+
+                } catch (final Exception e) {
+                    logger.warn("Failed to register collector for MBean {}", name, e);
                 }
-
-                if (isExcluded(collector)) {
-                    continue;
-                }
-
-                mBeanCollectorsByName.merge(collector.name(), collector, MBeanGroupMetricFamilyCollector::merge);
-                mBeanNameToCollectorNameMap.put(name, collector.name());
-
-            } catch (final Exception e) {
-                logger.warn("Failed to register collector for MBean {}", name, e);
             }
-        }
-    }
-
-    private void maybeRegisterRequiredMBean(final Object object, final ObjectName name) {
-        for (final Map.Entry<ObjectName, Consumer<Object>> registryEntry : requiredMBeansRegistry.entrySet()) {
-            if (registryEntry.getKey().apply(name)) {
-                registryEntry.getValue().accept(object);
-
-                requiredMBeansLatch.countDown();
-            }
-        }
+        });
     }
 
     protected void unregisterMBean(final ObjectName mBeanName) {
@@ -202,7 +203,19 @@ public abstract class Harvester {
             return;
         }
 
-        mBeanCollectorsByName.compute(collectorName, (k, v) -> v.removeMBean(mBeanName));
+        defer(() -> {
+            mBeanCollectorsByName.compute(collectorName, (k, v) -> v.removeMBean(mBeanName));
+        });
+    }
+
+    private void maybeRegisterRequiredMBean(final Object object, final ObjectName name) {
+        for (final Map.Entry<ObjectName, Consumer<Object>> registryEntry : requiredMBeansRegistry.entrySet()) {
+            if (registryEntry.getKey().apply(name)) {
+                registryEntry.getValue().accept(object);
+
+                requiredMBeansLatch.countDown();
+            }
+        }
     }
 
     private boolean isExcluded(final ObjectName objectName) {

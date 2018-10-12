@@ -35,13 +35,15 @@ public class JMXHarvester extends Harvester {
 
     private Set<ObjectInstance> currentMBeans = ImmutableSet.of();
 
-    private void reconcileMBeans() {
+    void reconcileMBeans() {
         try {
             final Set<ObjectInstance> mBeans = mBeanServerConnection.queryMBeans(null, null);
 
             // unregister
             {
                 final Set<ObjectInstance> removedMBeans = Sets.difference(currentMBeans, mBeans);
+
+                logger.debug("Removing {} old MBeans.", removedMBeans.size());
 
                 for (final ObjectInstance instance : removedMBeans) {
                     unregisterMBean(instance.getObjectName());
