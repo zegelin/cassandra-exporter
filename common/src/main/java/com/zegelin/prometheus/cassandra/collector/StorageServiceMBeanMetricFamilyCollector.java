@@ -38,17 +38,17 @@ public class StorageServiceMBeanMetricFamilyCollector extends MBeanGroupMetricFa
 
     private final StorageServiceMBean storageServiceMBean;
     private final MetadataFactory metadataFactory;
-    private final Set<String> excludeSystemTables;
+    private final Set<String> excludedKeyspaces;
 
 
     private final Map<Labels, FileStore> labeledFileStores;
 
 
     private StorageServiceMBeanMetricFamilyCollector(final StorageServiceMBean storageServiceMBean,
-                                                     final MetadataFactory metadataFactory, final Set<String> excludeSystemTables) {
+                                                     final MetadataFactory metadataFactory, final Set<String> excludedKeyspaces) {
         this.storageServiceMBean = storageServiceMBean;
         this.metadataFactory = metadataFactory;
-        this.excludeSystemTables = excludeSystemTables;
+        this.excludedKeyspaces = excludedKeyspaces;
 
         // determine the set of FileStores (i.e., mountpoints) for the Cassandra data/CL/cache directories
         // (which can be done once -- changing directories requires a server restart)
@@ -91,7 +91,7 @@ public class StorageServiceMBeanMetricFamilyCollector extends MBeanGroupMetricFa
 
         {
             final Stream<NumericMetric> ownershipMetricStream = metadataFactory.keyspaces().stream()
-                    .filter(keyspace -> !excludeSystemTables.contains(keyspace))
+                    .filter(keyspace -> !excludedKeyspaces.contains(keyspace))
                     .flatMap(keyspace -> {
                         try {
                             return storageServiceMBean.effectiveOwnership(keyspace).entrySet().stream()

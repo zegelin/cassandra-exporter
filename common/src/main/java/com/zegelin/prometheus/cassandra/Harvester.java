@@ -19,6 +19,7 @@ import javax.management.ObjectName;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static com.zegelin.prometheus.cassandra.CassandraObjectNames.ENDPOINT_SNITCH_INFO_MBEAN_NAME;
@@ -247,7 +248,15 @@ public abstract class Harvester {
                     stopwatch.start();
                 }
 
-                return e.getValue().collect();
+                final Stream<MetricFamily> metricFamilyStream = e.getValue().collect();
+
+                if (collectorTimingEnabled) {
+                    // call cache (collect sub-streams) and collect to time the actual collection
+                    return metricFamilyStream.map(MetricFamily::cache).collect(Collectors.toList()).stream();
+
+                } else {
+                    return metricFamilyStream;
+                }
 
             } catch (final Exception exception) {
                 logger.warn("Metrics collector {} failed to collect. Skipping.", e.getKey(), exception);
@@ -278,7 +287,7 @@ public abstract class Harvester {
                 .map(e -> new NumericMetric(Labels.of("collector", e.metricFamilyName), nanosecondsToSeconds(e.cumulativeCollectionTime)));
 
         return Stream.of(
-                new CounterMetricFamily("cassandra_exporter_collection_time_seconds", "Time taken to run each metrics collector.", timingMetrics)
+                new CounterMetricFamily("cassandra_exporter_collection_time_seconds_total", "Cumulative time taken to run each metrics collector.", timingMetrics)
         );
     }
 

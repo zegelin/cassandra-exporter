@@ -120,6 +120,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     private final Set<TableLabels> tableLabels;
     private final Set<String> excludedKeyspaces;
 
+
     public FactoriesSupplier(final MetadataFactory metadataFactory, final HarvesterOptions options) {
         this.metadataFactory = metadataFactory;
         this.perThreadTimingEnabled = options.perThreadTimingEnabled;
@@ -425,36 +426,11 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     }
 
 
-//    private static <T> FunctionalMetricFamilyCollector.CollectorFunction<T> cache(final FunctionalMetricFamilyCollector.CollectorFunction<T> fn, final long duration, final TimeUnit unit) {
-//        final LoadingCache<FunctionalMetricFamilyCollector.LabeledObjectGroup<T>, List<MetricFamily>> cache = CacheBuilder.newBuilder()
-//                .expireAfterWrite(duration, unit)
-//                .build(new CacheLoader<FunctionalMetricFamilyCollector.LabeledObjectGroup<T>, List<MetricFamily>>() {
-//                    @Override
-//                    public List<MetricFamily> load(final FunctionalMetricFamilyCollector.LabeledObjectGroup<T> key) throws Exception {
-//                        return fn.apply(key).map(MetricFamily::cache).collect(Collectors.toList()); // store Stream as a List, since Streams can't be replayed
-//                    }
-//                });
-//
-//        return labeledObjectGroup -> cache.getUnchecked(labeledObjectGroup).stream();
-//    }
+    private Factory cache(final Factory delegate, final long duration, final TimeUnit unit) {
+        // TODO: handle caching configuration here
 
-//    private static <T> Factory cache(final Factory cache) {
-//        return mBean -> {
-//            final MBeanGroupMetricFamilyCollector collector = cache.createCollector(mBean);
-//
-//            if (collector == null) {
-//                return null;
-//            }
-//
-//            return new MBeanGroupMetricFamilyCollector() {
-//
-//                @Override
-//                public Stream<MetricFamily> collect() {
-//                    return null;
-//                }
-//            }
-//        }
-//    }
+        return CachingCollector.cache(delegate, duration, unit);
+    }
 
 
     @Override
@@ -678,7 +654,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
             builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewLockAcquireTime", "view_lock_acquisition_seconds", null));
             builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewReadTime", "view_read_seconds", null));
 
-            builder.add(cache(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "SnapshotsSize", "snapshots_size_bytes_total", null), 5, TimeUnit.MINUTES)); // TODO: maybe make configurable
+            builder.add(cache(tableMetricFactory(functionalCollector(numericGaugeAsGauge()), "SnapshotsSize", "snapshots_size_bytes_total", null), 5, TimeUnit.MINUTES)); // TODO: maybe make caching configurable
 
             builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "RowCacheHit", "row_cache_hits", null));
             builder.add(tableMetricFactory(functionalCollector(counterAsGauge()), "RowCacheHitOutOfRange", "row_cache_misses", null, ImmutableMap.of("miss_type", "out_of_range")));
