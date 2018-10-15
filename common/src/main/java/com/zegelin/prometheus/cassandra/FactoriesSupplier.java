@@ -98,8 +98,6 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
                         if (!modifier.modify(keyPropertyList, rawLabels)) {
                             return null;
                         }
-
-//                        rawLabels.putAll(labelMaker.apply(keyPropertyList));
                     }
                 }
 

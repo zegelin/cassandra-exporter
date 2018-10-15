@@ -30,7 +30,7 @@ public class UntypedMetricFamily extends MetricFamily<UntypedMetricFamily.Untype
     public static class Untyped extends NumericMetric {
         public final String name;
 
-        public Untyped(final Labels labels, final String name, final Float value) {
+        public Untyped(final Labels labels, final String name, final float value) {
             super(labels, value);
 
             this.name = name;
