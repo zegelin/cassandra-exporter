@@ -68,7 +68,9 @@ public class GarbageCollectorMXBeanMetricFamilyCollector extends MBeanGroupMetri
             if (garbageCollectorMXBean instanceof com.sun.management.GarbageCollectorMXBean) {
                 final GcInfo lastGcInfo = ((com.sun.management.GarbageCollectorMXBean) garbageCollectorMXBean).getLastGcInfo();
 
-                lastGCDurationSecondsMetrics.add(new NumericMetric(labels, millisecondsToSeconds(lastGcInfo.getDuration())));
+                if (lastGcInfo != null) {
+                    lastGCDurationSecondsMetrics.add(new NumericMetric(labels, millisecondsToSeconds(lastGcInfo.getDuration())));
+                }
             }
         }
 
