@@ -1,9 +1,7 @@
 package com.zegelin.prometheus.cassandra;
 
-import com.datastax.driver.core.AbstractTableMetadata;
-import com.datastax.driver.core.KeyspaceMetadata;
-import com.datastax.driver.core.MaterializedViewMetadata;
-import com.datastax.driver.core.Metadata;
+import com.datastax.driver.core.*;
+import com.datastax.driver.core.policies.LoadBalancingPolicy;
 
 import java.net.InetAddress;
 import java.util.Optional;
@@ -11,15 +9,15 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public class RemoteMetadataFactory extends MetadataFactory {
-    private final Metadata clusterMetadata;
+    private final Cluster cluster;
 
-    RemoteMetadataFactory(final Metadata clusterMetadata) {
-        this.clusterMetadata = clusterMetadata;
+    RemoteMetadataFactory(final Cluster cluster) {
+        this.cluster = cluster;
     }
 
     @Override
     public Optional<IndexMetadata> indexMetadata(final String keyspaceName, final String tableName, final String indexName) {
-        return Optional.ofNullable(clusterMetadata.getKeyspace(keyspaceName))
+        return Optional.ofNullable(cluster.getMetadata().getKeyspace(keyspaceName))
                 .flatMap(k -> Optional.ofNullable(k.getTable(tableName)))
                 .flatMap(t -> Optional.ofNullable(t.getIndex(indexName)))
                 .map(i -> new IndexMetadata() {
@@ -37,7 +35,7 @@ public class RemoteMetadataFactory extends MetadataFactory {
 
     @Override
     public Optional<TableMetadata> tableOrViewMetadata(final String keyspaceName, final String tableOrViewName) {
-        return Optional.ofNullable(clusterMetadata.getKeyspace(keyspaceName))
+        return Optional.ofNullable(cluster.getMetadata().getKeyspace(keyspaceName))
                 .flatMap(k -> {
                     final AbstractTableMetadata tableMetadata = k.getTable(tableOrViewName);
                     final AbstractTableMetadata materializedViewMetadata = k.getMaterializedView(tableOrViewName);
@@ -59,12 +57,12 @@ public class RemoteMetadataFactory extends MetadataFactory {
 
     @Override
     public Set<String> keyspaces() {
-        return clusterMetadata.getKeyspaces().stream().map(KeyspaceMetadata::getName).collect(Collectors.toSet());
+        return cluster.getMetadata().getKeyspaces().stream().map(KeyspaceMetadata::getName).collect(Collectors.toSet());
     }
 
     @Override
     public Optional<EndpointMetadata> endpointMetadata(final InetAddress endpoint) {
-        return clusterMetadata.getAllHosts().stream()
+        return cluster.getMetadata().getAllHosts().stream()
                 .filter(h -> h.getBroadcastAddress().equals(endpoint))
                 .findFirst()
                 .map(h -> new EndpointMetadata() {
@@ -78,5 +76,23 @@ public class RemoteMetadataFactory extends MetadataFactory {
                         return h.getRack();
                     }
                 });
+    }
+
+    @Override
+    public String clusterName() {
+        return cluster.getMetadata().getClusterName();
+    }
+
+    @Override
+    public InetAddress localBroadcastAddress() {
+        final LoadBalancingPolicy loadBalancingPolicy = cluster.getConfiguration().getPolicies().getLoadBalancingPolicy();
+
+        // if the LoadBalancingPolicy is correctly configured, this should return just the local host
+        final Host host = cluster.getMetadata().getAllHosts().stream()
+                .filter(h -> loadBalancingPolicy.distance(h) == HostDistance.LOCAL)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No Cassandra node with LOCAL distance found."));
+
+        return host.getBroadcastAddress();
     }
 }

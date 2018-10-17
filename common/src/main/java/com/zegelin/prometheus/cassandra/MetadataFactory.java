@@ -70,4 +70,8 @@ public abstract class MetadataFactory {
     public Labels endpointLabels(final String endpoint) {
         return endpointLabels(InetAddresses.forString(endpoint));
     }
+
+    public abstract String clusterName();
+
+    public abstract InetAddress localBroadcastAddress();
 }

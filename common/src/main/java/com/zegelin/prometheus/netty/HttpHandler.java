@@ -13,7 +13,6 @@ import com.zegelin.prometheus.domain.MetricFamily;
 import com.zegelin.prometheus.exposition.JsonFormatChunkedInput;
 import com.zegelin.prometheus.exposition.TextFormatChunkedInput;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;

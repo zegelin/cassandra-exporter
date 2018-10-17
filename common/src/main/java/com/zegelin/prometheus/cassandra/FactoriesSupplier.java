@@ -1,11 +1,7 @@
 package com.zegelin.prometheus.cassandra;
 
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector.Factory;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
@@ -16,7 +12,6 @@ import com.zegelin.prometheus.cassandra.collector.StorageServiceMBeanMetricFamil
 import com.zegelin.prometheus.cassandra.collector.dynamic.FunctionalMetricFamilyCollector;
 import com.zegelin.prometheus.cassandra.collector.jvm.*;
 import com.zegelin.prometheus.domain.Labels;
-import com.zegelin.prometheus.domain.MetricFamily;
 
 import javax.management.*;
 import java.util.*;
@@ -25,11 +20,9 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import static com.zegelin.jmx.ObjectNames.format;
 import static com.zegelin.prometheus.cassandra.CollectorFunctions.*;
-import static com.zegelin.prometheus.cassandra.collector.CachingCollector.cache;
 
 @SuppressWarnings("SameParameterValue")
 public class FactoriesSupplier implements Supplier<List<Factory>> {

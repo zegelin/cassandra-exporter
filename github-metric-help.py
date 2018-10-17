@@ -1,8 +1,9 @@
-import json
-import urllib.request
-import itertools
 import collections
+import itertools
+import json
 import re
+import urllib.request
+
 
 def combine_dicts(dicts):
     res = collections.defaultdict(list)

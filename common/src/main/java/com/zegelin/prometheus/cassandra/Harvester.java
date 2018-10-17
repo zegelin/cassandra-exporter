@@ -2,6 +2,7 @@ package com.zegelin.prometheus.cassandra;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.net.InetAddresses;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
@@ -9,21 +10,20 @@ import com.zegelin.prometheus.domain.CounterMetricFamily;
 import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
 import com.zegelin.prometheus.domain.NumericMetric;
-import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
-import org.apache.cassandra.service.StorageServiceMBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
+import java.net.InetAddress;
 import java.util.*;
-import java.util.concurrent.*;
-import java.util.function.Consumer;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static com.zegelin.prometheus.cassandra.CassandraObjectNames.ENDPOINT_SNITCH_INFO_MBEAN_NAME;
-import static com.zegelin.prometheus.cassandra.CassandraObjectNames.STORAGE_SERVICE_MBEAN_NAME;
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.nanosecondsToSeconds;
 
 public abstract class Harvester {
@@ -31,7 +31,6 @@ public abstract class Harvester {
 
     public enum GlobalLabel implements LabelEnum {
         CLUSTER,
-        HOST_ID,
         NODE,
         DATACENTER,
         RACK;
@@ -122,18 +121,11 @@ public abstract class Harvester {
 
     private final List<MBeanGroupMetricFamilyCollector.Factory> collectorFactories;
 
+    private final MetadataFactory metadataFactory;
+
+
     private final Map<String, MBeanGroupMetricFamilyCollector> mBeanCollectorsByName = Collections.synchronizedMap(new HashMap<>());
     private final Map<ObjectName, String> mBeanNameToCollectorNameMap = Collections.synchronizedMap(new HashMap<>());
-
-    private StorageServiceMBean storageService;
-    private EndpointSnitchInfoMBean endpointSnitchInfo;
-
-    private final Map<ObjectName, Consumer<Object>> requiredMBeansRegistry = ImmutableMap.<ObjectName, Consumer<Object>>builder()
-            .put(ENDPOINT_SNITCH_INFO_MBEAN_NAME, (o) -> endpointSnitchInfo = (EndpointSnitchInfoMBean) o)
-            .put(STORAGE_SERVICE_MBEAN_NAME, (o) -> storageService = (StorageServiceMBean) o)
-            .build();
-
-    private final CountDownLatch requiredMBeansLatch = new CountDownLatch(requiredMBeansRegistry.size());
 
     private final Set<Exclusion> exclusions;
     private final Set<GlobalLabel> enabledGlobalLabels;
@@ -149,6 +141,7 @@ public abstract class Harvester {
 
     protected Harvester(final MetadataFactory metadataFactory, final HarvesterOptions options) {
         this.collectorFactories = new ArrayList<>(new FactoriesSupplier(metadataFactory, options).get());
+        this.metadataFactory = metadataFactory;
         this.exclusions = options.exclusions;
         this.enabledGlobalLabels = options.globalLabels;
         this.collectorTimingEnabled = options.collectorTimingEnabled;
@@ -165,12 +158,14 @@ public abstract class Harvester {
 
 
     protected void registerMBean(final Object mBean, final ObjectName name) {
-        maybeRegisterRequiredMBean(mBean, name);
-
         if (isExcluded(name)) {
             return;
         }
 
+        // Defer the creation/registration of the collector.
+        // For newly created tables, Cassandra registers the metric MBeans for tables before the table is registered with the
+        // internal Schema. As a result, when run as an agent, registerMBean will be called during table creation
+        // and table metadata lookups in the factory will fail because the table doesn't yet exist in the Schema.
         defer(() -> {
             final NamedObject<Object> namedMBean = new NamedObject<>(name, mBean);
 
@@ -207,16 +202,6 @@ public abstract class Harvester {
         defer(() -> {
             mBeanCollectorsByName.compute(collectorName, (k, v) -> v.removeMBean(mBeanName));
         });
-    }
-
-    private void maybeRegisterRequiredMBean(final Object object, final ObjectName name) {
-        for (final Map.Entry<ObjectName, Consumer<Object>> registryEntry : requiredMBeansRegistry.entrySet()) {
-            if (registryEntry.getKey().apply(name)) {
-                registryEntry.getValue().accept(object);
-
-                requiredMBeansLatch.countDown();
-            }
-        }
     }
 
     private boolean isExcluded(final ObjectName objectName) {
@@ -292,27 +277,16 @@ public abstract class Harvester {
     }
 
     public Labels globalLabels() {
-        // TODO: memoize the result of this function
-
-        try {
-            requiredMBeansLatch.await();
-
-        } catch (final InterruptedException e) {
-            logger.warn("Interrupted while waiting for required MBeans to be registered.", e);
-
-            return new Labels(ImmutableMap.of());
-        }
-
-        final String hostId = storageService.getLocalHostId();
-        final String endpoint = storageService.getHostIdToEndpoint().get(hostId);
+        final InetAddress localBroadcastAddress = metadataFactory.localBroadcastAddress();
+        final MetadataFactory.EndpointMetadata localMetadata = metadataFactory.endpointMetadata(localBroadcastAddress)
+                .orElseThrow(() -> new IllegalStateException("Unable to get metadata about the local node."));
 
         final ImmutableMap.Builder<String, String> mapBuilder = ImmutableMap.builder();
 
-        LabelEnum.addIfEnabled(GlobalLabel.CLUSTER, enabledGlobalLabels, mapBuilder, storageService::getClusterName);
-        LabelEnum.addIfEnabled(GlobalLabel.HOST_ID, enabledGlobalLabels, mapBuilder, () -> hostId);
-        LabelEnum.addIfEnabled(GlobalLabel.NODE, enabledGlobalLabels, mapBuilder, () -> endpoint);
-        LabelEnum.addIfEnabled(GlobalLabel.DATACENTER, enabledGlobalLabels, mapBuilder, endpointSnitchInfo::getDatacenter);
-        LabelEnum.addIfEnabled(GlobalLabel.RACK, enabledGlobalLabels, mapBuilder, endpointSnitchInfo::getRack);
+        LabelEnum.addIfEnabled(GlobalLabel.CLUSTER, enabledGlobalLabels, mapBuilder, metadataFactory::clusterName);
+        LabelEnum.addIfEnabled(GlobalLabel.NODE, enabledGlobalLabels, mapBuilder, () -> InetAddresses.toAddrString(localBroadcastAddress));
+        LabelEnum.addIfEnabled(GlobalLabel.DATACENTER, enabledGlobalLabels, mapBuilder, localMetadata::dataCenter);
+        LabelEnum.addIfEnabled(GlobalLabel.RACK, enabledGlobalLabels, mapBuilder, localMetadata::rack);
 
         return new Labels(mapBuilder.build());
     }

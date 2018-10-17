@@ -5,7 +5,6 @@ import com.sun.management.UnixOperatingSystemMXBean;
 import com.zegelin.jmx.ObjectNames;
 import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector;
 import com.zegelin.prometheus.domain.GaugeMetricFamily;
-import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
 import com.zegelin.prometheus.domain.NumericMetric;
 

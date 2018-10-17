@@ -1,13 +1,14 @@
 package com.zegelin.prometheus.cassandra;
 
 import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.locator.IEndpointSnitch;
+import org.apache.cassandra.utils.FBUtilities;
 
 import java.net.InetAddress;
 import java.util.Optional;
 import java.util.Set;
-
-
 
 public class InternalMetadataFactory extends MetadataFactory {
     private static Optional<CFMetaData> getCFMetaData(final String keyspaceName, final String tableName) {
@@ -59,15 +60,28 @@ public class InternalMetadataFactory extends MetadataFactory {
 
     @Override
     public Optional<EndpointMetadata> endpointMetadata(final InetAddress endpoint) {
-        return Optional.empty();
-//        final IEndpointSnitch endpointSnitch = DatabaseDescriptor.getEndpointSnitch();
-//
-//        endpointSnitch.getDatacenter(endpoint)
-//
-//        return Optional.ofNullable(endpointSnitch).map(snitch -> {
-//
-//        })
-//
-//        return Gossiper.instance.getEndpointStates()
+        final IEndpointSnitch endpointSnitch = DatabaseDescriptor.getEndpointSnitch();
+
+        return Optional.of(new EndpointMetadata() {
+            @Override
+            public String dataCenter() {
+                return endpointSnitch.getDatacenter(endpoint);
+            }
+
+            @Override
+            public String rack() {
+                return endpointSnitch.getRack(endpoint);
+            }
+        });
+    }
+
+    @Override
+    public String clusterName() {
+        return DatabaseDescriptor.getClusterName();
+    }
+
+    @Override
+    public InetAddress localBroadcastAddress() {
+        return FBUtilities.getBroadcastAddress();
     }
 }

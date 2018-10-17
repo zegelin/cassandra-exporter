@@ -65,15 +65,12 @@ public class HarvesterOptions {
 
     @Option(names = {"-g", "--global-labels"}, paramLabel = "LABEL", split = ",",
             description = "Select which global labels to include on all exported metrics. " +
-                    "Valid options are: 'CLUSTER' (cluster name), 'HOST_ID' (UUID of the node), 'NODE' (node endpoint IP address), " +
+                    "Valid options are: 'CLUSTER' (cluster name), 'NODE' (node endpoint IP address), " +
                     "'DATACENTER' (DC name), 'RACK' (rack name). " +
                     "The default is to include all global labels except HOST_ID. " +
                     "To disable all global labels use --no-global-labels."
     )
     public Set<Harvester.GlobalLabel> globalLabels = EnumSet.allOf(Harvester.GlobalLabel.class);
-    {
-        globalLabels.remove(Harvester.GlobalLabel.HOST_ID); // remove host ID by default to avoid creating new time-series on node replace.
-    }
 
     @Option(names = "--no-global-labels", arity = "0",
             description = "Disable all global labels.")

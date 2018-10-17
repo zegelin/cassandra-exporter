@@ -1,5 +1,7 @@
 package com.zegelin.prometheus.cassandra;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 import com.datastax.driver.core.*;
 import com.datastax.driver.core.policies.RoundRobinPolicy;
 import com.datastax.driver.core.policies.WhiteListPolicy;
@@ -10,17 +12,17 @@ import com.zegelin.picocli.JMXServiceURLTypeConverter;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
 import com.zegelin.prometheus.cli.HttpServerOptions;
 import com.zegelin.prometheus.netty.Server;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.*;
 
 import javax.management.MBeanServerConnection;
-import javax.management.Notification;
-import javax.management.NotificationListener;
 import javax.management.remote.JMXConnectionNotification;
 import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 
@@ -28,6 +30,10 @@ import static com.datastax.driver.core.ProtocolOptions.DEFAULT_PORT;
 
 @Command(name = "cassandra-exporter-standalone", mixinStandardHelpOptions = true, sortOptions = false)
 public class Application implements Callable<Void> {
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Application.class);
+
+    private static final List<Level> LOGGER_LEVELS = ImmutableList.of(Level.INFO, Level.DEBUG, Level.TRACE);
+
     static class CqlInetSocketAddressTypeConverter extends InetSocketAddressTypeConverter {
         @Override
         protected int defaultPort() {
@@ -71,9 +77,15 @@ public class Application implements Callable<Void> {
     @Option(names = "--cql-password", paramLabel = "PASSWORD", description = "CQL authentication password.")
     private String cqlPassword;
 
+    @Option(names = {"-v", "--verbose"}, description = "Enable verbose logging. Multiple invocations increase the verbosity.")
+    boolean[] verbosity = {};
+
 
     @Override
     public Void call() throws Exception {
+        setRootLoggerLevel();
+
+
         final MBeanServerConnection mBeanServerConnection;
         {
             Map<String, String[]> jmxEnvironment = null;
@@ -93,32 +105,38 @@ public class Application implements Callable<Void> {
 
             connector.addConnectionNotificationListener((notification, handback) -> {
                 if (notification.getType().equals(JMXConnectionNotification.CLOSED)) {
+                    logger.error("JMX connection to {} closed.", jmxServiceURL);
+
                     Runtime.getRuntime().exit(-1);
                 }
             }, null, null);
         }
 
-        final Session session;
+        final Cluster cluster;
         final RemoteMetadataFactory remoteMetadataFactory;
         {
             if (cqlUser != null ^ cqlPassword != null) {
                 throw new ParameterException(commandSpec.commandLine(), "Both --cql-user and --cql-password are required when either is used.");
             }
 
-            session = Cluster.builder()
+            final Cluster.Builder clusterBuilder = Cluster.builder()
                     .addContactPointsWithPorts(cqlAddress)
-                    .withCredentials(cqlUser, cqlPassword)
-                    .withLoadBalancingPolicy(new WhiteListPolicy(new RoundRobinPolicy(), ImmutableList.of(cqlAddress)))
-                    .build()
-                    .connect();
+                    .withLoadBalancingPolicy(new WhiteListPolicy(new RoundRobinPolicy(), ImmutableList.of(cqlAddress)));
 
-            remoteMetadataFactory = new RemoteMetadataFactory(session.getCluster().getMetadata());
+            if (cqlUser != null && cqlPassword != null) {
+                clusterBuilder.withCredentials(cqlUser, cqlPassword);
+            }
+
+            cluster = clusterBuilder.build();
+            cluster.connect();
+
+            remoteMetadataFactory = new RemoteMetadataFactory(cluster);
         }
 
         final JMXHarvester harvester = new JMXHarvester(mBeanServerConnection, remoteMetadataFactory, harvesterOptions);
 
         // register for schema change notifications
-        session.getCluster().register(new SchemaChangeListenerBase() {
+        cluster.register(new SchemaChangeListenerBase() {
             @Override
             public void onKeyspaceAdded(final KeyspaceMetadata keyspace) {
                 harvester.reconcileMBeans();
@@ -154,6 +172,17 @@ public class Application implements Callable<Void> {
         Server.start(httpServerOptions.listenAddresses, harvester, httpServerOptions.helpExposition);
 
         return null;
+    }
+
+
+    private void setRootLoggerLevel() {
+        final int verbosity = Math.min(this.verbosity.length, LOGGER_LEVELS.size() - 1);
+
+        final Level level = LOGGER_LEVELS.get(verbosity);
+
+        final Logger rootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+
+        rootLogger.setLevel(level);
     }
 
     public static void main(String[] args) {
