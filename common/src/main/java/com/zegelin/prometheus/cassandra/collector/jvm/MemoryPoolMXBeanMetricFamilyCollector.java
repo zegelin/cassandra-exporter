@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.neg1ToNaN;
 
-public class MemoryPoolMXBeanMetricFamilyCollector implements MBeanGroupMetricFamilyCollector {
+public class MemoryPoolMXBeanMetricFamilyCollector extends MBeanGroupMetricFamilyCollector {
     private static final ObjectName MEMORY_POOL_MXBEAN_NAME_PATTERN = ObjectNames.create(ManagementFactory.MEMORY_POOL_MXBEAN_DOMAIN_TYPE + ",*");
 
     public static final Factory FACTORY = mBean -> {
@@ -41,10 +41,6 @@ public class MemoryPoolMXBeanMetricFamilyCollector implements MBeanGroupMetricFa
         this.labeledMemoryPoolMXBeans = labeledMemoryPoolMXBeans;
     }
 
-    @Override
-    public String name() {
-        return ManagementFactory.MEMORY_POOL_MXBEAN_DOMAIN_TYPE;
-    }
 
     @Override
     public MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector rawOther) {
@@ -90,7 +86,7 @@ public class MemoryPoolMXBeanMetricFamilyCollector implements MBeanGroupMetricFa
 
         return Stream.of(
                 new GaugeMetricFamily("cassandra_jvm_memory_pool_initial_bytes", "Initial size of the memory pool.", initialBytesMetrics.build()),
-                new GaugeMetricFamily("cassandra_jvm_memory_pool_used_bytes", null, usedBytesMetrics.build()),
+                new GaugeMetricFamily("cassandra_jvm_memory_pool_used_bytes", "Current memory pool usage.", usedBytesMetrics.build()),
                 new GaugeMetricFamily("cassandra_jvm_memory_pool_committed_bytes", null, committedBytesMetrics.build()),
                 new GaugeMetricFamily("cassandra_jvm_memory_pool_maximum_bytes", "Maximum size of the memory pool.", maximumBytesMetrics.build())
         );

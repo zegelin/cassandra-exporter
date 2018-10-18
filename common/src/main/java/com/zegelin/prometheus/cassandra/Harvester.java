@@ -1,33 +1,44 @@
 package com.zegelin.prometheus.cassandra;
 
+import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.net.InetAddresses;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.zegelin.jmx.NamedObject;
-import com.zegelin.jmx.ObjectNames;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
+import com.zegelin.prometheus.domain.CounterMetricFamily;
 import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
-import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
-import org.apache.cassandra.service.StorageServiceMBean;
+import com.zegelin.prometheus.domain.NumericMetric;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
+import java.net.InetAddress;
 import java.util.*;
-import java.util.concurrent.CountDownLatch;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.nanosecondsToSeconds;
 
 public abstract class Harvester {
     private static final Logger logger = LoggerFactory.getLogger(Harvester.class);
 
-    public enum GlobalLabel {
-        CLUSTER_NAME,
-        HOST_ID,
+    public enum GlobalLabel implements LabelEnum {
+        CLUSTER,
         NODE,
         DATACENTER,
         RACK;
+
+        @Override
+        public String labelName() {
+            return "cassandra_" + name().toLowerCase();
+        }
     }
 
     public static abstract class Exclusion {
@@ -110,70 +121,74 @@ public abstract class Harvester {
 
     private final List<MBeanGroupMetricFamilyCollector.Factory> collectorFactories;
 
+    private final MetadataFactory metadataFactory;
+
+
     private final Map<String, MBeanGroupMetricFamilyCollector> mBeanCollectorsByName = Collections.synchronizedMap(new HashMap<>());
     private final Map<ObjectName, String> mBeanNameToCollectorNameMap = Collections.synchronizedMap(new HashMap<>());
-
-    private StorageServiceMBean storageService;
-    private EndpointSnitchInfoMBean endpointSnitchInfo;
-
-    private final Map<ObjectName, Consumer<Object>> requiredMBeansRegistry = ImmutableMap.<ObjectName, Consumer<Object>>builder()
-            .put(ObjectNames.create("org.apache.cassandra.db:type=EndpointSnitchInfo"), (o) -> endpointSnitchInfo = (EndpointSnitchInfoMBean) o)
-            .put(ObjectNames.create("org.apache.cassandra.db:type=StorageService"), (o) -> storageService = (StorageServiceMBean) o)
-            .build();
-
-    private final CountDownLatch requiredMBeansLatch = new CountDownLatch(requiredMBeansRegistry.size());
 
     private final Set<Exclusion> exclusions;
     private final Set<GlobalLabel> enabledGlobalLabels;
 
+    private final boolean collectorTimingEnabled;
+    private final Map<String, Stopwatch> collectionTimes = new ConcurrentHashMap<>();
+
+    private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+            .setNameFormat("cassandra-exporter-harvester-defer-%d")
+            .setDaemon(true)
+            .build());
+
 
     protected Harvester(final MetadataFactory metadataFactory, final HarvesterOptions options) {
-        this.collectorFactories = new FactoriesSupplier(metadataFactory, options).get();
+        this.collectorFactories = new ArrayList<>(new FactoriesSupplier(metadataFactory, options).get());
+        this.metadataFactory = metadataFactory;
         this.exclusions = options.exclusions;
         this.enabledGlobalLabels = options.globalLabels;
+        this.collectorTimingEnabled = options.collectorTimingEnabled;
+    }
+
+    protected void addCollectorFactory(final MBeanGroupMetricFamilyCollector.Factory factory) {
+        collectorFactories.add(factory);
+    }
+
+
+    private void defer(final Runnable runnable) {
+        scheduledExecutorService.schedule(runnable, 1, TimeUnit.SECONDS);
     }
 
 
     protected void registerMBean(final Object mBean, final ObjectName name) {
-        maybeRegisterRequiredMBean(mBean, name);
-
         if (isExcluded(name)) {
             return;
         }
 
-        final NamedObject<Object> namedMBean = new NamedObject<>(name, mBean);
+        // Defer the creation/registration of the collector.
+        // For newly created tables, Cassandra registers the metric MBeans for tables before the table is registered with the
+        // internal Schema. As a result, when run as an agent, registerMBean will be called during table creation
+        // and table metadata lookups in the factory will fail because the table doesn't yet exist in the Schema.
+        defer(() -> {
+            final NamedObject<Object> namedMBean = new NamedObject<>(name, mBean);
 
-        for (final MBeanGroupMetricFamilyCollector.Factory factory : collectorFactories) {
-            try {
-                final MBeanGroupMetricFamilyCollector collector = factory.createCollector(namedMBean);
+            for (final MBeanGroupMetricFamilyCollector.Factory factory : collectorFactories) {
+                try {
+                    final MBeanGroupMetricFamilyCollector collector = factory.createCollector(namedMBean);
 
-                if (collector == null) {
-                    continue;
+                    if (collector == null) {
+                        continue;
+                    }
+
+                    if (isExcluded(collector)) {
+                        continue;
+                    }
+
+                    mBeanCollectorsByName.merge(collector.name(), collector, MBeanGroupMetricFamilyCollector::merge);
+                    mBeanNameToCollectorNameMap.put(name, collector.name());
+
+                } catch (final Exception e) {
+                    logger.warn("Failed to register collector for MBean {}", name, e);
                 }
-
-                if (isExcluded(collector)) {
-                    continue;
-                }
-
-                mBeanCollectorsByName.merge(collector.name(), collector, MBeanGroupMetricFamilyCollector::merge);
-                mBeanNameToCollectorNameMap.put(name, collector.name());
-
-                break;
-
-            } catch (final Exception e) {
-                logger.warn("Failed to register collector for MBean {}", name, e);
             }
-        }
-    }
-
-    private void maybeRegisterRequiredMBean(final Object object, final ObjectName name) {
-        for (final Map.Entry<ObjectName, Consumer<Object>> registryEntry : requiredMBeansRegistry.entrySet()) {
-            if (registryEntry.getKey().apply(name)) {
-                registryEntry.getValue().accept(object);
-
-                requiredMBeansLatch.countDown();
-            }
-        }
+        });
     }
 
     protected void unregisterMBean(final ObjectName mBeanName) {
@@ -184,7 +199,9 @@ public abstract class Harvester {
             return;
         }
 
-        mBeanCollectorsByName.compute(collectorName, (k, v) -> v.removeMBean(mBeanName));
+        defer(() -> {
+            mBeanCollectorsByName.compute(collectorName, (k, v) -> v.removeMBean(mBeanName));
+        });
     }
 
     private boolean isExcluded(final ObjectName objectName) {
@@ -206,61 +223,70 @@ public abstract class Harvester {
     }
 
     public Stream<MetricFamily> collect() {
-        return mBeanCollectorsByName.entrySet().parallelStream().flatMap((e) -> {
+        final Stream<MetricFamily> metricFamilies = mBeanCollectorsByName.entrySet().parallelStream().flatMap((e) -> {
+            final Stopwatch stopwatch = (collectorTimingEnabled ?
+                    collectionTimes.computeIfAbsent(e.getKey(), (k) -> Stopwatch.createUnstarted()) :
+                    null);
+
             try {
-                return e.getValue().collect();
+                if (stopwatch != null) {
+                    stopwatch.start();
+                }
+
+                final Stream<MetricFamily> metricFamilyStream = e.getValue().collect();
+
+                if (collectorTimingEnabled) {
+                    // call cache (collect sub-streams) and collect to time the actual collection
+                    return metricFamilyStream.map(MetricFamily::cache).collect(Collectors.toList()).stream();
+
+                } else {
+                    return metricFamilyStream;
+                }
 
             } catch (final Exception exception) {
                 logger.warn("Metrics collector {} failed to collect. Skipping.", e.getKey(), exception);
 
                 return Stream.empty();
+
+            } finally {
+                if (stopwatch != null) {
+                    stopwatch.stop();
+                }
             }
         });
+
+        if (collectorTimingEnabled) {
+            return Stream.concat(metricFamilies, collectTimings());
+
+        } else {
+            return metricFamilies;
+        }
+    }
+
+    private Stream<MetricFamily> collectTimings() {
+        final Stream<NumericMetric> timingMetrics = collectionTimes.entrySet().stream()
+                .map(e -> new Object() {
+                    final String metricFamilyName = e.getKey();
+                    final long cumulativeCollectionTime = e.getValue().elapsed(TimeUnit.NANOSECONDS);
+                })
+                .map(e -> new NumericMetric(Labels.of("collector", e.metricFamilyName), nanosecondsToSeconds(e.cumulativeCollectionTime)));
+
+        return Stream.of(
+                new CounterMetricFamily("cassandra_exporter_collection_time_seconds_total", "Cumulative time taken to run each metrics collector.", timingMetrics)
+        );
     }
 
     public Labels globalLabels() {
-        // TODO: memoize the result of this function
-
-        try {
-            requiredMBeansLatch.await();
-
-        } catch (final InterruptedException e) {
-            logger.warn("Interrupted while waiting for required MBeans to be registered.", e);
-
-            return new Labels(ImmutableMap.of());
-        }
-
-        final String hostId = storageService.getLocalHostId();
-        final String endpoint = storageService.getHostIdToEndpoint().get(hostId);
+        final InetAddress localBroadcastAddress = metadataFactory.localBroadcastAddress();
+        final MetadataFactory.EndpointMetadata localMetadata = metadataFactory.endpointMetadata(localBroadcastAddress)
+                .orElseThrow(() -> new IllegalStateException("Unable to get metadata about the local node."));
 
         final ImmutableMap.Builder<String, String> mapBuilder = ImmutableMap.builder();
 
-        for (final GlobalLabel label : enabledGlobalLabels) {
-            switch (label) {
-                case CLUSTER_NAME:
-                    mapBuilder.put("cassandra_cluster_name", storageService.getClusterName());
-                    break;
-
-                case HOST_ID:
-                    mapBuilder.put("cassandra_host_id", hostId);
-                    break;
-
-                case NODE:
-                    mapBuilder.put("cassandra_node", endpoint);
-                    break;
-
-                case DATACENTER:
-                    mapBuilder.put("cassandra_datacenter", endpointSnitchInfo.getDatacenter());
-                    break;
-
-                case RACK:
-                    mapBuilder.put("cassandra_rack", endpointSnitchInfo.getRack());
-                    break;
-
-                default:
-                    throw new IllegalStateException();
-            }
-        }
+        LabelEnum.addIfEnabled(GlobalLabel.CLUSTER, enabledGlobalLabels, mapBuilder, metadataFactory::clusterName);
+        LabelEnum.addIfEnabled(GlobalLabel.NODE, enabledGlobalLabels, mapBuilder, () -> InetAddresses.toAddrString(localBroadcastAddress));
+        LabelEnum.addIfEnabled(GlobalLabel.DATACENTER, enabledGlobalLabels, mapBuilder, localMetadata::dataCenter);
+        LabelEnum.addIfEnabled(GlobalLabel.RACK, enabledGlobalLabels, mapBuilder, localMetadata::rack);
 
         return new Labels(mapBuilder.build());
     }

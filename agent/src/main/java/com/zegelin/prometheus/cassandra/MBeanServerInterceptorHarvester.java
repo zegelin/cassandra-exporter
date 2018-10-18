@@ -1,15 +1,12 @@
 package com.zegelin.prometheus.cassandra;
 
-import com.google.common.collect.ImmutableList;
 import com.sun.jmx.mbeanserver.JmxMBeanServer;
 import com.zegelin.jmx.DelegatingMBeanServerInterceptor;
 import com.zegelin.prometheus.cassandra.cli.HarvesterOptions;
+import com.zegelin.prometheus.cassandra.collector.InternalGossiperMBeanMetricFamilyCollector;
 
 import javax.management.*;
 import java.lang.management.ManagementFactory;
-import java.lang.management.PlatformManagedObject;
-import java.util.List;
-import java.util.stream.Collectors;
 
 class MBeanServerInterceptorHarvester extends Harvester {
     class MBeanServerInterceptor extends DelegatingMBeanServerInterceptor {
@@ -42,21 +39,31 @@ class MBeanServerInterceptorHarvester extends Harvester {
     }
 
     MBeanServerInterceptorHarvester(final HarvesterOptions options) {
-        super(new InternalMetadataFactory(), options);
-
-        registerPlatformMXBeans();
-        registerMBeanServerInterceptor();
-
+        this(new InternalMetadataFactory(), options);
     }
 
+    private MBeanServerInterceptorHarvester(final MetadataFactory metadataFactory, final HarvesterOptions options) {
+        super(metadataFactory, options);
+
+        registerPlatformMXBeans();
+
+        installMBeanServerInterceptor();
+
+        addCollectorFactory(InternalGossiperMBeanMetricFamilyCollector.factory(metadataFactory));
+    }
+
+
     private void registerPlatformMXBeans() {
+        // the platform MXBeans get registered right at JVM startup, before the agent gets a chance to
+        // install the interceptor.
+        // instead, directly register the MXBeans here...
         ManagementFactory.getPlatformManagementInterfaces().stream()
                 .flatMap(i -> ManagementFactory.getPlatformMXBeans(i).stream())
                 .distinct()
                 .forEach(mxBean -> registerMBean(mxBean, mxBean.getObjectName()));
     }
 
-    private void registerMBeanServerInterceptor() {
+    private void installMBeanServerInterceptor() {
         final JmxMBeanServer mBeanServer = (JmxMBeanServer) ManagementFactory.getPlatformMBeanServer();
 
         final MBeanServerInterceptor interceptor = new MBeanServerInterceptor(mBeanServer.getMBeanServerInterceptor());

@@ -1,5 +1,6 @@
 package com.zegelin.prometheus.netty;
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.zegelin.prometheus.cassandra.Harvester;
@@ -14,15 +15,17 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpContentCompressor;
 import io.netty.handler.codec.http.HttpObjectAggregator;
-import io.netty.handler.codec.http.HttpRequestDecoder;
-import io.netty.handler.codec.http.HttpResponseEncoder;
+import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.stream.ChunkedWriteHandler;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.ThreadFactory;
 
 public class Server {
+    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Server.class);
+
 
     public static class ChildInitializer extends ChannelInitializer<SocketChannel> {
         private final Harvester harvester;
@@ -35,9 +38,9 @@ public class Server {
 
         @Override
         public void initChannel(final SocketChannel ch) {
-            ch.pipeline().addLast(new HttpRequestDecoder())
+            ch.pipeline()
+                    .addLast(new HttpServerCodec())
                     .addLast(new HttpObjectAggregator(1048576))
-                    .addLast(new HttpResponseEncoder())
                     .addLast(new HttpContentCompressor())
                     .addLast(new ChunkedWriteHandler())
                     .addLast(new HttpHandler(harvester, helpExposition));
@@ -70,6 +73,14 @@ public class Server {
             }
 
             channels = builder.build();
+        }
+
+        if (logger.isInfoEnabled()) {
+            logger.info("cassandra-exporter started. Listening on {}", Joiner.on(", ").join(
+                    listenAddresses.stream()
+                            .map(a -> String.format("http://%s:%d", a.getHostString(), a.getPort()))
+                            .iterator()
+            ));
         }
 
         // TODO: maybe return a future that the caller can sync on, to wait for the channels to shutdown?

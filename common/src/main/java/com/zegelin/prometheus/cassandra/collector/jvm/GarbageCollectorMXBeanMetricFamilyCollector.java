@@ -16,7 +16,7 @@ import java.util.stream.Stream;
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.millisecondsToSeconds;
 import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.neg1ToNaN;
 
-public class GarbageCollectorMXBeanMetricFamilyCollector implements MBeanGroupMetricFamilyCollector {
+public class GarbageCollectorMXBeanMetricFamilyCollector extends MBeanGroupMetricFamilyCollector {
     private static final ObjectName GARBAGE_COLLECTOR_MXBEAN_NAME_PATTERN = ObjectNames.create(ManagementFactory.GARBAGE_COLLECTOR_MXBEAN_DOMAIN_TYPE + ",*");
 
     public static final Factory FACTORY = mBean -> {
@@ -35,12 +35,6 @@ public class GarbageCollectorMXBeanMetricFamilyCollector implements MBeanGroupMe
     private GarbageCollectorMXBeanMetricFamilyCollector(final Map<Labels, GarbageCollectorMXBean> labeledGarbageCollectorMXBeans) {
         this.labeledGarbageCollectorMXBeans = labeledGarbageCollectorMXBeans;
     }
-
-    @Override
-    public String name() {
-        return ManagementFactory.GARBAGE_COLLECTOR_MXBEAN_DOMAIN_TYPE;
-    }
-
 
     @Override
     public MBeanGroupMetricFamilyCollector merge(final MBeanGroupMetricFamilyCollector rawOther) {
@@ -81,8 +75,8 @@ public class GarbageCollectorMXBeanMetricFamilyCollector implements MBeanGroupMe
         }
 
         return Stream.of(
-                new CounterMetricFamily("cassandra_jvm_gc_collection_count", "Total number of collections that have occurred (since server start).", collectionCountMetrics.build()),
-                new CounterMetricFamily("cassandra_jvm_gc_estimated_collection_duration_total_seconds", "Estimated accumulated collection elapsed time (since server start).", collectionDurationTotalSecondsMetrics.build()),
+                new CounterMetricFamily("cassandra_jvm_gc_collection_count", "Total number of collections that have occurred (since JVM start).", collectionCountMetrics.build()),
+                new CounterMetricFamily("cassandra_jvm_gc_estimated_collection_duration_seconds_total", "Estimated cumulative collection elapsed time (since JVM start).", collectionDurationTotalSecondsMetrics.build()),
                 new GaugeMetricFamily("cassandra_jvm_gc_last_collection_duration_seconds", "Last collection duration.", lastGCDurationSecondsMetrics.build())
         );
     }

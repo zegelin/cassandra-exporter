@@ -1,13 +1,13 @@
 # cassandra-exporter [![CircleCI](https://circleci.com/gh/instaclustr/cassandra-exporter.svg?style=svg)](https://circleci.com/gh/instaclustr/cassandra-exporter)
 
+*cassandra-exporter* is a Java agent (with optional standalone mode) that exports Cassandra metrics to [Prometheus](http://prometheus.io).
+
 *Project Status: beta*
 
 
 ## Introduction
 
-*cassandra-exporter* is a Java agent (with optional standalone mode) that exports Cassandra metrics to [Prometheus](http://prometheus.io).
-
-It enables high performance collection of Cassandra metrics and follows the Prometheus best practices for metrics naming and labeling.
+*cassandra-exporter* enables high performance collection of Cassandra metrics and follows the Prometheus best practices for metrics naming and labeling.
 
 ![Benchamrk Results](doc/benchmark-results.png)
 
@@ -15,8 +15,13 @@ It enables high performance collection of Cassandra metrics and follows the Prom
 *cassandra-exporter* completes exposition in ~140ms. Compared to the next-best, *jmx_exporter*, which completes exposition in _~8 seconds_.
 Other solutions can take _tens of seconds_, during which CPU time is consumed querying JMX and serialising values.
 
-There is no caching involved -- all metrics exposed by *cassandra-exporter* are live
-(except `cassandra_table_snapshots_size_total_bytes`, which is expensive to query).
+See the [Exported Metrics](https://github.com/instaclustr/cassandra-exporter/wiki/Exported-Metrics) wiki page for a list of available metrics.
+
+All but a few select metrics exposed by *cassandra-exporter* are live with no caching involved.
+The few that are cached are done so for performance reasons.
+
+
+
 
 *cassandra-exporter* exports metric families, where the names, labels, metric types (gauge, counter, summary, etc), and value scales 
 have been hand-tuned to produce easy-to-query output.
@@ -95,23 +100,46 @@ The format/structure of the JSON output is subject to change.
 
 The available command line options may be seen by passing `-h`/`--help`:
 
-    Usage: cassandra-exporter-standalone [-hV] [--enable-per-thread-cpu-times]
+    Usage: cassandra-exporter-standalone [-hV] [--enable-collector-timing]
+                                         [--enable-per-thread-cpu-times]
+                                         [--exclude-system-tables]
                                          [--no-fast-float] [--no-global-labels]
-                                         [--family-help=VALUE]
+                                         [--no-table-labels] [--cql-address=
+                                         [ADDRESS][:PORT]]
+                                         [--cql-password=PASSWORD]
+                                         [--cql-user=NAME] [--family-help=VALUE]
                                          [--jmx-password=PASSWORD]
                                          [--jmx-service-url=URL] [--jmx-user=NAME]
-                                         [-g=LABEL[,LABEL...]]... [-l=[ADDRESS][:
-                                         PORT]]... [-e=EXCLUSION...]...
+                                         [--exclude-keyspaces=<excludedKeyspaces>]..
+                                         . [-g=LABEL[,LABEL...]]... [-l=[ADDRESS][:
+                                         PORT]]... [-t=LABEL[,LABEL...]]...
+                                         [-e=EXCLUSION...]...
       -g, --global-labels=LABEL[,LABEL...]
                                 Select which global labels to include on all exported
-                                  metrics. Valid options are: 'cluster_name', 'host_id'
-                                  (UUID of the node), 'node' (node endpoint IP address),
-                                  'datacenter', 'rack'. The default is to include all
-                                  global labels. To disable all global labels use
+                                  metrics. Valid options are: 'CLUSTER' (cluster name),
+                                  'HOST_ID' (UUID of the node), 'NODE' (node endpoint IP
+                                  address), 'DATACENTER' (DC name), 'RACK' (rack name).
+                                  The default is to include all global labels except
+                                  HOST_ID. To disable all global labels use
                                   --no-global-labels.
+      -t, --table-labels=LABEL[,LABEL...]
+                                Select which labels to include on table-level metrics.
+                                  Valid options are: 'TABLE_TYPE' (table, view or
+                                  index), 'INDEX_TYPE' (for indexes -- keys, composites
+                                  or custom), 'INDEX_CLASS' (the index class name for
+                                  custom indexes),  'COMPACTION_STRATEGY_CLASS' (for
+                                  tables & views, compaction-related metrics only). The
+                                  default is to include all table labels. To disable all
+                                  table labels use --no-table-labels.
           --enable-per-thread-cpu-times
                                 Collect per-thread CPU times, where each thread gets its
                                   own time-series. (EXPERIMENTAL)
+          --enable-collector-timing
+                                Record the cumulative time taken to run each collector
+                                  and export the results.
+          --exclude-keyspaces=<excludedKeyspaces>
+    
+          --no-global-labels    Disable all global labels.
       -e, --exclude=EXCLUSION...
                                 Exclude a metric family or MBean from exposition.
                                   EXCLUSION may be the full name of a metric family
@@ -125,8 +153,10 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   prefixed with '#' are considered comments and are
                                   ignored. This option may be specified more than once
                                   to define multiple exclusions.
+          --no-table-labels     Disable all table labels.
           --no-fast-float       Disable the use of fast float -> ascii conversion.
-          --no-global-labels    Disable all global labels.
+          --exclude-system-tables
+                                Exclude system table/keyspace metrics.
       -l, --listen=[ADDRESS][:PORT]
                                 Listen address (and optional port). ADDRESS may be a
                                   hostname, IPv4 dotted or decimal address, or IPv6
@@ -146,14 +176,21 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   bandwidth. Can be overridden with the "?
                                   help=true|false" URI query parameter. Valid values:
                                   INCLUDE, EXCLUDE, AUTOMATIC. Defaults to AUTOMATIC.
-          --jmx-service-url=URL The JMX service URL of the Cassandra instance to connect
-                                  to and collect metrics. Defaults to 'service:jmx:rmi:
+          --jmx-service-url=URL JMX service URL of the Cassandra instance to connect to
+                                  and collect metrics. Defaults to 'service:jmx:rmi:
                                   ///jndi/rmi://localhost:7199/jmxrmi'
-          --jmx-user=NAME       The JMX authentication user name.
+          --jmx-user=NAME       JMX authentication user name.
           --jmx-password=PASSWORD
-                                The JMX authentication password.
+                                JMX authentication password.
+          --cql-address=[ADDRESS][:PORT]
+                                Address/hostname and optional port for the CQL metadata
+                                  connection. Defaults to 'localhost:9042'
+          --cql-user=NAME       CQL authentication user name.
+          --cql-password=PASSWORD
+                                CQL authentication password.
       -h, --help                Show this help message and exit.
       -V, --version             Print version information and exit.
+
 
 
 Options may also be provided via an `@`-file:
@@ -168,7 +205,9 @@ Options may also be provided via an `@`-file:
       
     `@$CASSANDRA_CONF/cassandra-exporter.options` is a good choice.
 
-Note that `--jmx-service-url`, `--jmx-user` and `--jmx-password` are only applicable to the standalone version -- the agent does not use JMX.
+Note that `--jmx-service-url`, `--jmx-user`, `--jmx-password`, `--cql-address`, `--cql-user` and `--cql-password`
+are only applicable to the standalone version -- the agent does not use JMX or CQL connections.
+
 To protect the JMX password and prevent it from showing up in `ps`, `top` and other utilities, use an `@`-file that contains `--jmx-password=PASSWORD`.
 
 When run as an agent, command line options must be provided as part of the `-javaagent` flag, with an equals sign (`=`) separating the JAR path and the agent options.
@@ -213,11 +252,13 @@ For exporters that run as a separate process there is additional overhead of int
 
 ### Best practices
 
-The exporter follows Prometheus best practices for metric names, labels and data types.
+The exporter attempts to follow Prometheus' best practices for metric names, labels and data types.
 
-Aggregate metrics, such as the aggregated table metrics at the keyspace and node level, are skipped. Instead these should be aggregated using PromQL queries or Prometheus recording rules.
+Cassandras built-in aggregate metrics, such as the table-related metrics at the keyspace and node level, are skipped.
+Instead only the table-level metrics are exported &mdash; aggregates can be computed on-the-fly using PromQL queries or once using Prometheus recording rules.
 
-Metrics are coalesced when appropriate so they share the same name, opting for *labels* to differentiate indiviual time series. For example, each table level metric has a constant name and at minimum a `table` & `keyspace` label, which allows for complex PromQL queries.
+Unlike the metrics exported via JMX, where each table metric has a unique name, Cassandras metrics are coalesced when appropriate so they share the same exported metric family name, opting for *labels* to differentiate individual time series.
+For example, each table level metric has a constant name and at minimum a `table` & `keyspace` label, which allows for complex PromQL queries.
 
 For example the `cassandra_table_operation_latency_seconds[_count|_sum]` summary metric combines read, write, range read, CAS prepare, CAS propose and CAS commit latency metrics together into a single metric family.
 A summary exposes percentiles (via the `quantile` label), a total count of recorded samples (via the `_count` metric),
@@ -256,33 +297,33 @@ Element                                              | Value
 ### Global Labels
 
 The exporter does attach global labels to the exported metrics.
-These may be configured with the `--global-labels` CLI option.
+These may be configured with the `--global-labels` (or disabled via `--no-global-labels) CLI option.
 
 These labels are:
 
-- `cassandra_cluster_name`
+- `cassandra_cluster`
 
-    The name of the cluster, as specified in cassandra.yaml
+    The name of the cluster, as specified in cassandra.yaml.
     
 - `cassandra_host_id`
 
-    The unique UUID of the node
+    The unique UUID of the node. _Not enabled by default_
     
 - `cassandra_node`
 
-    The IP address of the node
+    The IP address of the node.
     
 - `cassandra_datacenter`
 
-    The configured data center name of the node
+    The configured data center name of the node.
     
 - `cassandra_rack`
 
-    The configured rack name of the node
+    The configured rack name of the node.
     
 These labels allow aggregation of metrics at the cluster, data center and rack levels.
 
-While these labels could be defined in the prometheus scrape config, we feel that having these labels be automatically
+While these labels could be defined in the Prometheus scrape config, we feel that having these labels be automatically
 applied simplifies things, especially when Prometheus is monitoring multiple clusters across numerous DCs and racks.
 
 
@@ -303,13 +344,12 @@ See the [project issue tracker](https://github.com/instaclustr/cassandra-exporte
     Early versions supported outputting metrics as a HTML document for easier viewing in a browser.
     
     The format writer was complicated and we didn't want to add dependencies on a templating library (e.g. Freemarker) to make it simpler.
-    Instead the JSON format writer has been improved and optimized with the intent that the data could be consumed by simple static Javascript webapp. 
+    Instead the JSON format writer has been improved and optimized with the intent that the data could be consumed by simple static JavaScript webapp. 
 
 - Add some example queries
 - Add Grafana dashboard templates
 - Documentation improvements
 - Improve standalone JMX exporter
-    - Metadata support
     - Systemd service file
     - Package
     

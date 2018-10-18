@@ -24,7 +24,7 @@ import static com.zegelin.prometheus.cassandra.CassandraMetricsUtilities.jmxTime
 
     This collector combines both into a single Prometheus Summary metric.
  */
-public class LatencyMetricGroupSummaryCollector implements MBeanGroupMetricFamilyCollector {
+public class LatencyMetricGroupSummaryCollector extends MBeanGroupMetricFamilyCollector {
     static class LatencyMetricGroup {
         final NamedObject<SamplingCounting> latencyTimer;
         final NamedObject<JmxCounterMBean> totalLatencyCounter; // totalLatency is a sum of all latency values, represented as a Counter
@@ -48,6 +48,21 @@ public class LatencyMetricGroupSummaryCollector implements MBeanGroupMetricFamil
         boolean incomplete() {
             return latencyTimer == null || totalLatencyCounter == null;
         }
+
+        LatencyMetricGroup removeMBean(final ObjectName objectName) {
+            final NamedObject<SamplingCounting> newLatencyTimer = latencyTimer != null && !latencyTimer.name.equals(objectName) ? latencyTimer : null;
+            final NamedObject<JmxCounterMBean> newTotalLatencyCounter = totalLatencyCounter != null && !totalLatencyCounter.name.equals(objectName) ? totalLatencyCounter : null;
+
+            if (newLatencyTimer == null && newTotalLatencyCounter == null) {
+                return null;
+            }
+
+            if (newLatencyTimer == latencyTimer && newTotalLatencyCounter == totalLatencyCounter) {
+                return this;
+            }
+
+            return new LatencyMetricGroup(newLatencyTimer, newTotalLatencyCounter);
+        }
     }
 
     private final String name;
@@ -57,7 +72,7 @@ public class LatencyMetricGroupSummaryCollector implements MBeanGroupMetricFamil
     private LatencyMetricGroupSummaryCollector(final String name, final String help, final Map<Labels, LatencyMetricGroup> latencyMetricGroups) {
         this.name = name;
         this.help = help;
-        this.latencyMetricGroups = latencyMetricGroups;
+        this.latencyMetricGroups = ImmutableMap.copyOf(latencyMetricGroups);
     }
 
 
@@ -83,17 +98,33 @@ public class LatencyMetricGroupSummaryCollector implements MBeanGroupMetricFamil
 
         final LatencyMetricGroupSummaryCollector other = (LatencyMetricGroupSummaryCollector) rawOther;
 
-        final HashMap<Labels, LatencyMetricGroup> latencyMetricGroups = new HashMap<>(this.latencyMetricGroups);
+        final HashMap<Labels, LatencyMetricGroup> newLatencyMetricGroups = new HashMap<>(latencyMetricGroups);
         for (final Map.Entry<Labels, LatencyMetricGroup> group : other.latencyMetricGroups.entrySet()) {
-            latencyMetricGroups.merge(group.getKey(), group.getValue(), LatencyMetricGroup::merge);
+            newLatencyMetricGroups.merge(group.getKey(), group.getValue(), LatencyMetricGroup::merge);
         }
 
-        return new LatencyMetricGroupSummaryCollector(name, help, latencyMetricGroups);
+        return new LatencyMetricGroupSummaryCollector(name, help, newLatencyMetricGroups);
     }
 
     @Override
     public MBeanGroupMetricFamilyCollector removeMBean(final ObjectName mBeanName) {
-        throw new IllegalStateException(); // TODO: implement
+        final HashMap<Labels, LatencyMetricGroup> newLatencyMetricGroups = new HashMap<>(latencyMetricGroups.size());
+
+        for (final Map.Entry<Labels, LatencyMetricGroup> entry : latencyMetricGroups.entrySet()) {
+            final LatencyMetricGroup latencyMetricGroup = entry.getValue().removeMBean(mBeanName);
+
+            if (latencyMetricGroup == null) {
+                continue;
+            }
+
+            newLatencyMetricGroups.put(entry.getKey(), latencyMetricGroup);
+        }
+
+        if (newLatencyMetricGroups.size() == 0) {
+            return null;
+        }
+
+        return new LatencyMetricGroupSummaryCollector(name, help, newLatencyMetricGroups);
     }
 
     @Override

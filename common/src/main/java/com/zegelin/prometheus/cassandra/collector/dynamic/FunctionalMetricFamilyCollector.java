@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-public class FunctionalMetricFamilyCollector<T> implements MBeanGroupMetricFamilyCollector {
+public class FunctionalMetricFamilyCollector<T> extends MBeanGroupMetricFamilyCollector {
     private final String name, help;
 
     public interface LabeledObjectGroup<T> {
@@ -68,12 +68,12 @@ public class FunctionalMetricFamilyCollector<T> implements MBeanGroupMetricFamil
 
         final FunctionalMetricFamilyCollector<T> other = (FunctionalMetricFamilyCollector<T>) rawOther;
 
-        final Map<Labels, NamedObject<T>> labeledObjects = new HashMap<>(this.labeledObjects);
+        final Map<Labels, NamedObject<T>> newLabeledObjects = new HashMap<>(labeledObjects);
         for (final Map.Entry<Labels, NamedObject<T>> entry : other.labeledObjects.entrySet()) {
-            labeledObjects.merge(entry.getKey(), entry.getValue(), (o1, o2) -> {throw new IllegalStateException(String.format("Object %s and %s cannot be merged, yet their labels are the same.", o1, o2));});
+            newLabeledObjects.merge(entry.getKey(), entry.getValue(), (o1, o2) -> {throw new IllegalStateException(String.format("Object %s and %s cannot be merged, yet their labels are the same.", o1, o2));});
         }
 
-        return new FunctionalMetricFamilyCollector<>(name, help, labeledObjects, collectorFunction);
+        return new FunctionalMetricFamilyCollector<>(name, help, newLabeledObjects, collectorFunction);
     }
 
     @Override

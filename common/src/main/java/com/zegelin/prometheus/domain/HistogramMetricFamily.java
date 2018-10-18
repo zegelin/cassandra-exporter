@@ -1,5 +1,8 @@
 package com.zegelin.prometheus.domain;
 
+import java.util.List;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class HistogramMetricFamily extends MetricFamily<HistogramMetricFamily.Histogram> {
@@ -7,9 +10,20 @@ public class HistogramMetricFamily extends MetricFamily<HistogramMetricFamily.Hi
         super(name, help, metrics);
     }
 
+    private HistogramMetricFamily(final String name, final String help, final Supplier<Stream<Histogram>> metricsStreamSupplier) {
+        super(name, help, metricsStreamSupplier);
+    }
+
     @Override
     public <R> R accept(final MetricFamilyVisitor<R> visitor) {
         return visitor.visit(this);
+    }
+
+    @Override
+    public MetricFamily<Histogram> cache() {
+        final List<Histogram> metrics = metrics().collect(Collectors.toList());
+
+        return new HistogramMetricFamily(name, help, metrics::stream);
     }
 
     public static class Histogram extends Metric {
