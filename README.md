@@ -354,3 +354,5 @@ See the [project issue tracker](https://github.com/instaclustr/cassandra-exporte
     - Package
     
 - Packages for standard distributions (Debian, Fedora, Arch, etc) that install the JARs in the correct locations.
+
+Please see https://www.instaclustr.com/support/documentation/announcements/instaclustr-open-source-project-status/ for Instaclustr support status of this project.
