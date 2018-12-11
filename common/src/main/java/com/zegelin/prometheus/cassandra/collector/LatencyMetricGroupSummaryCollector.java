@@ -3,6 +3,7 @@ package com.zegelin.prometheus.cassandra.collector;
 import com.google.common.collect.ImmutableMap;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.prometheus.cassandra.MBeanGroupMetricFamilyCollector;
+import com.zegelin.prometheus.cassandra.MetricValueConversionFunctions;
 import com.zegelin.prometheus.cassandra.SamplingCounting;
 import com.zegelin.prometheus.domain.Interval;
 import com.zegelin.prometheus.domain.Labels;
@@ -17,10 +18,13 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static com.zegelin.prometheus.cassandra.CassandraMetricsUtilities.jmxTimerMBeanAsSamplingCounting;
+import static com.zegelin.prometheus.cassandra.MetricValueConversionFunctions.microsecondsToSeconds;
 
 /*
     Certain latency metrics in Cassandra are exposed via two separate MBeans -- a `Latency` bean
     and a `TotalLatency` bean.
+
+    Currently this assumes that these metrics are always in microseconds.
 
     This collector combines both into a single Prometheus Summary metric.
  */
@@ -137,9 +141,10 @@ public class LatencyMetricGroupSummaryCollector extends MBeanGroupMetricFamilyCo
                 .filter(e -> !e.latencyMetricGroup.incomplete())
                 .map(e -> {
                     final float count = e.latencyMetricGroup.latencyTimer.object.getCount();
-                    final float sum = e.latencyMetricGroup.totalLatencyCounter.object.getCount();
+                    final float sum = microsecondsToSeconds(e.latencyMetricGroup.totalLatencyCounter.object.getCount());
 
-                    final Stream<Interval> quantiles = e.latencyMetricGroup.latencyTimer.object.getIntervals();
+                    final Stream<Interval> quantiles = e.latencyMetricGroup.latencyTimer.object.getIntervals()
+                            .map(i -> i.transform(MetricValueConversionFunctions::microsecondsToSeconds));
 
                     return new SummaryMetricFamily.Summary(e.labels, sum, count, quantiles);
                 });
