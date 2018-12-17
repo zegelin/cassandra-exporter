@@ -168,7 +168,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     }
 
     private Factory clientRequestMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help) {
-        final ObjectName objectNamePattern = format("org.apache.cassandra.metrics:type=ClientRequest,name=%s,scope=*-*", jmxName);
+        final ObjectName objectNamePattern = format("org.apache.cassandra.metrics:type=ClientRequest,name=%s,scope=*", jmxName);
         final String metricFamilyName = String.format("client_request_%s", familyNameSuffix);
 
         return new FactoryBuilder(collectorConstructor, objectNamePattern, metricFamilyName)
@@ -182,13 +182,18 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
                     if (!matcher.matches())
                         throw new IllegalStateException();
 
-                    final String operation = matcher.group("operation").toLowerCase();
-                    final String consistency = matcher.group("consistency");
+                    final ImmutableMap.Builder<String, String> labelsBuilder = ImmutableMap.builder();
 
-                    return ImmutableMap.of(
-                            "operation", operation,
-                            "consistency", consistency
-                    );
+                    labelsBuilder.put("operation", matcher.group("operation").toLowerCase());
+
+                    {
+                        final String consistency = matcher.group("consistency");
+                        if (consistency != null) {
+                            labelsBuilder.put("consistency", consistency);
+                        }
+                    }
+
+                    return labelsBuilder.build();
                 })
                 .build();
     }
