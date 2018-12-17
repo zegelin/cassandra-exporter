@@ -37,7 +37,7 @@ For example, the following PromQL query will return an estimate of the number of
 
 | Component       | Version       |
 |-----------------|---------------|
-| Apache Cassandra| 3.11.2, 3.11.3        |
+| Apache Cassandra| 3.0.17 (experimental), 3.11.2, 3.11.3        |
 | Prometheus      | 2.0 and later |
 
 Other Cassandra and Prometheus versions will be tested for compatibility in the future.
