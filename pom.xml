@@ -3,7 +3,7 @@
 
     <groupId>com.zegelin.cassandra-exporter</groupId>
     <artifactId>exporter-parent</artifactId>
-    <version>0.9.6-SNAPSHOT</version>
+    <version>0.9.6</version>
     <packaging>pom</packaging>
 
     <name>Cassandra Exporter Parent</name>
@@ -25,7 +25,7 @@
 
     <scm>
         <connection>scm:git:file://localhost/${basedir}</connection>
-        <tag>HEAD</tag>
+        <tag>v0.9.6</tag>
     </scm>
 
     <dependencyManagement>
