@@ -81,7 +81,7 @@ public class Server {
         }
 
         if (logger.isInfoEnabled()) {
-            logger.info("Cassandra Exporter Agent Server has started. Listening on {}", Joiner.on(", ").join(
+            logger.info("cassandra-exporter has started. Listening on {}", Joiner.on(", ").join(
                     listenAddresses.stream()
                             .map(a -> String.format("http://%s:%d", a.getHostString(), a.getPort()))
                             .iterator()
@@ -93,11 +93,11 @@ public class Server {
 
         if (Server.channels != null) {
 
-            for (Channel ch : channels) {
+            for (final Channel ch : channels) {
                 try {
                     ch.closeFuture().sync();
-                } catch (InterruptedException e) {
-                    logger.debug("Closing of Cassandra Exporter Agent channel resulted in interrupted exception.", e);
+                } catch (final InterruptedException e) {
+                    logger.debug("Closing of cassandra-exporter channel resulted in interrupted exception.", e);
                 }
             }
 
@@ -105,9 +105,7 @@ public class Server {
 
             Server.eventLoopGroup.shutdownGracefully();
 
-            if (logger.isInfoEnabled()) {
-                logger.info("Cassandra Exporter Agent Server has stopped");
-            }
+            logger.info("cassandra-exporter has stopped");
         }
     }
 }

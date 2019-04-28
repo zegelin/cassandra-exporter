@@ -15,7 +15,6 @@
     </modules>
 
     <properties>
-        <version.cassanra.exporter.common>${project.version}</version.cassanra.exporter.common>
         <version.cassandra.all>3.11.2</version.cassandra.all>
 
         <version.maven.release.plugin>2.5.3</version.maven.release.plugin>
@@ -42,7 +41,7 @@
             <dependency>
                 <groupId>com.zegelin.cassandra-exporter</groupId>
                 <artifactId>common</artifactId>
-                <version>${version.cassanra.exporter.common}</version>
+                <version>0.9.7-SNAPSHOT</version>
                 <exclusions>
                     <exclusion>
                         <groupId>org.glassfish.hk2.external</groupId>
