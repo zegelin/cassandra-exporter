@@ -17,6 +17,7 @@ import io.netty.handler.codec.http.HttpContentCompressor;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.stream.ChunkedWriteHandler;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
@@ -24,8 +25,12 @@ import java.util.List;
 import java.util.concurrent.ThreadFactory;
 
 public class Server {
-    private static final org.slf4j.Logger logger = LoggerFactory.getLogger(Server.class);
 
+    private static final Logger logger = LoggerFactory.getLogger(Server.class);
+
+    private static List<Channel> channels;
+
+    private static EventLoopGroup eventLoopGroup;
 
     public static class ChildInitializer extends ChannelInitializer<SocketChannel> {
         private final Harvester harvester;
@@ -47,13 +52,16 @@ public class Server {
         }
     }
 
-    public static void start(final List<InetSocketAddress> listenAddresses, final Harvester harvester, final HttpHandler.HelpExposition helpExposition) throws InterruptedException {
+    public static void start(final List<InetSocketAddress> listenAddresses,
+                             final Harvester harvester,
+                             final HttpHandler.HelpExposition helpExposition) throws InterruptedException {
+
         final ThreadFactory threadFactory = new ThreadFactoryBuilder()
                 .setDaemon(true)
                 .setNameFormat("prometheus-netty-pool-%d")
                 .build();
 
-        final EventLoopGroup eventLoopGroup = new NioEventLoopGroup(1, threadFactory);
+        eventLoopGroup = new NioEventLoopGroup(1, threadFactory);
 
         final ServerBootstrap bootstrap = new ServerBootstrap();
 
@@ -62,27 +70,42 @@ public class Server {
                 .channel(NioServerSocketChannel.class)
                 .childHandler(new ChildInitializer(harvester, helpExposition));
 
-        final List<Channel> channels;
         {
             final ImmutableList.Builder<Channel> builder = ImmutableList.builder();
 
             for (final InetSocketAddress listenAddress : listenAddresses) {
-                final Channel channel = bootstrap.bind(listenAddress).sync().channel();
-
-                builder.add(channel);
+                builder.add(bootstrap.bind(listenAddress).sync().channel());
             }
 
-            channels = builder.build();
+            Server.channels = builder.build();
         }
 
         if (logger.isInfoEnabled()) {
-            logger.info("cassandra-exporter started. Listening on {}", Joiner.on(", ").join(
+            logger.info("cassandra-exporter has started. Listening on {}", Joiner.on(", ").join(
                     listenAddresses.stream()
                             .map(a -> String.format("http://%s:%d", a.getHostString(), a.getPort()))
                             .iterator()
             ));
         }
+    }
 
-        // TODO: maybe return a future that the caller can sync on, to wait for the channels to shutdown?
+    public static void stop() {
+
+        if (Server.channels != null) {
+
+            for (final Channel ch : channels) {
+                try {
+                    ch.closeFuture().sync();
+                } catch (final InterruptedException e) {
+                    logger.debug("Closing of cassandra-exporter channel resulted in interrupted exception.", e);
+                }
+            }
+
+            Server.channels = null;
+
+            Server.eventLoopGroup.shutdownGracefully();
+
+            logger.info("cassandra-exporter has stopped");
+        }
     }
 }
