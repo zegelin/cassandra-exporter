@@ -181,6 +181,12 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
      * @return map of matched SupportedMediaTypes -> AcceptedMediaTypes
      */
     private Multimap<MediaType, MediaType> checkAndGetPreferredMediaTypes(final List<MediaType> acceptedMediaTypes, final MediaType... supportedMediaTypes) {
+        if (acceptedMediaTypes.isEmpty()) {
+            // client didn't state that what they want, so give them the first preference
+            final MediaType firstSupportedType = supportedMediaTypes[0];
+            return ImmutableMultimap.of(firstSupportedType, firstSupportedType);
+        }
+
         final ImmutableMultimap.Builder<MediaType, MediaType> preferredMediaTypes = ImmutableMultimap.builder();
 
         outer:
