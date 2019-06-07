@@ -28,6 +28,7 @@
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
             <version>${version.picocli}</version>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 </project>
