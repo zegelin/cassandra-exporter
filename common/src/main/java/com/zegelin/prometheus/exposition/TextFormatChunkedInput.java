@@ -359,8 +359,8 @@ public class TextFormatChunkedInput implements ChunkedInput<ByteBuf> {
         while (chunkBuffer.readableBytes() < 1024 * 1024 && state != State.EOF) {
             try {
                 nextSlice(chunkBuffer);
-
             } catch (Exception e) {
+                chunkBuffer.release();
                 throw e;
             }
         }

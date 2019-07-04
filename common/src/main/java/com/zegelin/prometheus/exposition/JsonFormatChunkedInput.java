@@ -466,7 +466,12 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
 
         // add slices till we hit the chunk size (or slightly over it), or hit EOF
         while (chunkBuffer.readableBytes() < 1024 * 1024 && state != State.EOF) {
-            nextSlice(chunkBuffer);
+            try {
+                nextSlice(chunkBuffer);
+            } catch (Exception e) {
+                chunkBuffer.release();
+                throw e;
+            }
         }
 
         return chunkBuffer;
