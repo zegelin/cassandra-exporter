@@ -1,0 +1,31 @@
+- >
+  CREATE KEYSPACE example WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+- >
+  CREATE TABLE example.metric_families (
+    name text,
+    type text,
+    help text,
+    PRIMARY KEY (name)
+  )
+- >
+  CREATE INDEX ON example.metric_families (type)
+- >
+  CREATE TABLE example.numeric_metrics (
+    family text,
+    labels frozen<map<text, text>>,
+    bucket date,
+    time timestamp,
+    value float,
+
+    PRIMARY KEY ((family, labels, bucket), time)
+  )
+- >
+  CREATE MATERIALIZED VIEW example.numeric_metric_labels AS
+    SELECT family, labels, bucket, time
+    FROM example.numeric_metrics
+    WHERE family IS NOT NULL AND
+      labels IS NOT NULL AND
+      bucket IS NOT NULL AND
+      time IS NOT NULL
+  PRIMARY KEY (family, labels, bucket, time)
+
