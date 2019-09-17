@@ -17,19 +17,26 @@ import io.netty.handler.codec.http.HttpContentCompressor;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.stream.ChunkedWriteHandler;
+import io.netty.util.concurrent.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.List;
 import java.util.concurrent.ThreadFactory;
 
 public class Server {
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
 
-    private static List<Channel> channels;
+    private List<Channel> channels;
 
-    private static EventLoopGroup eventLoopGroup;
+    private EventLoopGroup eventLoopGroup;
+
+    public Server(final List<Channel> channels, final EventLoopGroup eventLoopGroup) {
+        this.channels = channels;
+        this.eventLoopGroup = eventLoopGroup;
+    }
 
     public static class ChildInitializer extends ChannelInitializer<SocketChannel> {
         private final Harvester harvester;
@@ -51,7 +58,7 @@ public class Server {
         }
     }
 
-    public static void start(final List<InetSocketAddress> listenAddresses,
+    public static Server start(final List<InetSocketAddress> listenAddresses,
                              final Harvester harvester,
                              final HttpHandler.HelpExposition helpExposition) throws InterruptedException {
 
@@ -60,7 +67,7 @@ public class Server {
                 .setNameFormat("prometheus-netty-pool-%d")
                 .build();
 
-        eventLoopGroup = new NioEventLoopGroup(1, threadFactory);
+        final EventLoopGroup eventLoopGroup = new NioEventLoopGroup(1, threadFactory);
 
         final ServerBootstrap bootstrap = new ServerBootstrap();
 
@@ -69,6 +76,7 @@ public class Server {
                 .channel(NioServerSocketChannel.class)
                 .childHandler(new ChildInitializer(harvester, helpExposition));
 
+        final List<Channel> serverChannels;
         {
             final ImmutableList.Builder<Channel> builder = ImmutableList.builder();
 
@@ -76,35 +84,36 @@ public class Server {
                 builder.add(bootstrap.bind(listenAddress).sync().channel());
             }
 
-            Server.channels = builder.build();
+            serverChannels = builder.build();
         }
 
+        final SocketAddress socketAddress1 = serverChannels.get(0).localAddress();
+
         if (logger.isInfoEnabled()) {
-            logger.info("cassandra-exporter has started. Listening on {}", Joiner.on(", ").join(
-                    listenAddresses.stream()
-                            .map(a -> String.format("http://%s:%d", a.getHostString(), a.getPort()))
+            logger.info("cassandra-exporter server has started. Listening on {}.", Joiner.on(", ").join(
+                    serverChannels.stream()
+                            .map(channel -> {
+                                final InetSocketAddress socketAddress = (InetSocketAddress) channel.localAddress();
+                                return String.format("http://%s:%d", socketAddress.getHostString(), socketAddress.getPort());
+                            })
                             .iterator()
             ));
         }
+
+        return new Server(serverChannels, eventLoopGroup);
     }
 
-    public static void stop() {
+    public Future<?> stop() {
+        final Future<?> future = eventLoopGroup.shutdownGracefully();
 
-        if (Server.channels != null) {
-
-            for (final Channel ch : channels) {
-                try {
-                    ch.closeFuture().sync();
-                } catch (final InterruptedException e) {
-                    logger.debug("Closing of cassandra-exporter channel resulted in interrupted exception.", e);
-                }
+        future.addListener(f -> {
+            if (f.isSuccess()) {
+                logger.info("cassandra-exporter server has stopped.");
+            } else {
+                logger.warn("cassandra-exporter server failed to stop cleanly.", f.cause());
             }
+        });
 
-            Server.channels = null;
-
-            Server.eventLoopGroup.shutdownGracefully();
-
-            logger.info("cassandra-exporter has stopped");
-        }
+        return future;
     }
 }

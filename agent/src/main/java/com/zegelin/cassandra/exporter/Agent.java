@@ -24,14 +24,20 @@ public class Agent implements Callable<Void> {
 
     @Override
     public Void call() throws Exception {
-
-        Runtime.getRuntime().addShutdownHook(new Thread(Server::stop));
-
         System.setProperty("javax.management.builder.initial", JmxMBeanServerBuilder.class.getCanonicalName());
 
         final MBeanServerInterceptorHarvester harvester = new MBeanServerInterceptorHarvester(harvesterOptions);
 
-        Server.start(httpServerOptions.listenAddresses, harvester, httpServerOptions.helpExposition);
+        final Server server = Server.start(httpServerOptions.listenAddresses, harvester, httpServerOptions.helpExposition);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                server.stop().sync();
+
+            } catch (final InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }));
 
         return null;
     }
