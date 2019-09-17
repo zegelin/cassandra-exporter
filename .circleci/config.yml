@@ -31,7 +31,7 @@ jobs:
 
   publish-github-release:
     docker:
-      - image: circleci/golang:1.8
+      - image: circleci/golang:1.13
     steps:
       - attach_workspace:
           at: ./artifacts
