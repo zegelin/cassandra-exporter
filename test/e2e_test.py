@@ -1,9 +1,10 @@
 # this end-to-end test does the following:
 # 1. download Prometheus (for the current platform)
 # 2. setup a multi-node Cassandra cluster with the exporter installed
-# 3. configure Prometheus it to scrape from the Cassandra nodes
+# 3. configure Prometheus to scrape from the Cassandra nodes
 # 4. verifies that Prometheus successfully scrapes the metrics
 # 5. cleans up everything
+
 import argparse
 import contextlib
 import http.server
@@ -113,28 +114,27 @@ if __name__ == '__main__':
             targets = prometheus.get_targets()
 
             for target in targets['activeTargets']:
-
-            break
-
-
-        for _ in tqdm(itertools.count()):
-            targets = prometheus.get_targets()
-
-            cassandra_target = None
-
-            for target in targets['activeTargets']:
-                if target['labels']['job'] == 'cassandra':
-                    cassandra_target = target
-                    break
-
-            if cassandra_target is not None:
-                if cassandra_target['health'] == 'up':
-                    break
-
-            time.sleep(1)
+                break
 
 
-        data = prometheus.query('test_family')
+            for _ in tqdm(itertools.count()):
+                targets = prometheus.get_targets()
+
+                cassandra_target = None
+
+                for target in targets['activeTargets']:
+                    if target['labels']['job'] == 'cassandra':
+                        cassandra_target = target
+                        break
+
+                if cassandra_target is not None:
+                    if cassandra_target['health'] == 'up':
+                        break
+
+                time.sleep(1)
+
+
+            data = prometheus.query('test_family')
         pass
 
 

@@ -3,8 +3,6 @@
 import argparse
 import contextlib
 import os
-import shutil
-import subprocess
 import tempfile
 import time
 import urllib.request
@@ -12,11 +10,9 @@ from pathlib import Path
 
 import cassandra.cluster
 import cassandra.connection
-import ccmlib.cluster
-import ccmlib.node
 import yaml
 
-from utils.ccm import create_ccm_cluster, TestCluster
+from utils.ccm import TestCluster
 from utils.jar_utils import ExporterJar
 from utils.path_utils import existing_file_arg
 
