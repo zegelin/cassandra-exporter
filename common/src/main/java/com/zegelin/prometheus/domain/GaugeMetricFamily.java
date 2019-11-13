@@ -7,10 +7,10 @@ import java.util.stream.Stream;
 
 public class GaugeMetricFamily extends MetricFamily<NumericMetric> {
     public GaugeMetricFamily(final String name, final String help, final Stream<NumericMetric> metrics) {
-        super(name, help, metrics);
+        this(name, help, () -> metrics);
     }
 
-    private GaugeMetricFamily(final String name, final String help, final Supplier<Stream<NumericMetric>> metricsStreamSupplier) {
+    GaugeMetricFamily(final String name, final String help, final Supplier<Stream<NumericMetric>> metricsStreamSupplier) {
         super(name, help, metricsStreamSupplier);
     }
 
@@ -21,7 +21,7 @@ public class GaugeMetricFamily extends MetricFamily<NumericMetric> {
     }
 
     @Override
-    public MetricFamily<NumericMetric> cache() {
+    public GaugeMetricFamily cachedCopy() {
         final List<NumericMetric> metrics = metrics().collect(Collectors.toList());
 
         return new GaugeMetricFamily(name, help, metrics::stream);

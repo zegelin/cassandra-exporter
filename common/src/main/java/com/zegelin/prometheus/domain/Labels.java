@@ -2,22 +2,21 @@ package com.zegelin.prometheus.domain;
 
 import com.google.common.collect.ForwardingMap;
 import com.google.common.collect.ImmutableMap;
-import com.zegelin.prometheus.exposition.JsonFormatChunkedInput;
-import com.zegelin.prometheus.exposition.TextFormatChunkedInput;
+import com.zegelin.prometheus.exposition.json.JsonFormatChunkedInput;
+import com.zegelin.prometheus.exposition.text.TextFormatLabels;
 import io.netty.buffer.ByteBuf;
 
 import java.util.Map;
 
 public final class Labels extends ForwardingMap<String, String> {
     private final ImmutableMap<String, String> labels;
-    private final ByteBuf plainTextFormatUTF8EncodedByteBuf, jsonFormatUTF8EncodedByteBuf;
     private final boolean isEmpty;
+
+    private ByteBuf plainTextFormatUTF8EncodedByteBuf, jsonFormatUTF8EncodedByteBuf;
 
     public Labels(final Map<String, String> labels) {
         this.labels = ImmutableMap.copyOf(labels);
         this.isEmpty = this.labels.isEmpty();
-        this.plainTextFormatUTF8EncodedByteBuf = TextFormatChunkedInput.formatLabels(labels);
-        this.jsonFormatUTF8EncodedByteBuf = JsonFormatChunkedInput.formatLabels(labels);
     }
 
     public static Labels of(final String key, final String value) {
@@ -39,10 +38,18 @@ public final class Labels extends ForwardingMap<String, String> {
     }
 
     public ByteBuf asPlainTextFormatUTF8EncodedByteBuf() {
+        if (plainTextFormatUTF8EncodedByteBuf == null) {
+            this.plainTextFormatUTF8EncodedByteBuf = TextFormatLabels.formatLabels(labels);
+        }
+
         return plainTextFormatUTF8EncodedByteBuf;
     }
 
     public ByteBuf asJSONFormatUTF8EncodedByteBuf() {
+        if (jsonFormatUTF8EncodedByteBuf == null) {
+            this.jsonFormatUTF8EncodedByteBuf = JsonFormatChunkedInput.formatLabels(labels);
+        }
+
         return jsonFormatUTF8EncodedByteBuf;
     }
 

@@ -8,10 +8,10 @@ import java.util.stream.Stream;
 
 public class UntypedMetricFamily extends MetricFamily<UntypedMetricFamily.Untyped> {
     public UntypedMetricFamily(final String name, final String help, final Stream<Untyped> metrics) {
-        super(name, help, metrics);
+        this(name, help, () -> metrics);
     }
 
-    private UntypedMetricFamily(final String name, final String help, final Supplier<Stream<Untyped>> metricsStreamSupplier) {
+    UntypedMetricFamily(final String name, final String help, final Supplier<Stream<Untyped>> metricsStreamSupplier) {
         super(name, help, metricsStreamSupplier);
     }
 
@@ -21,7 +21,7 @@ public class UntypedMetricFamily extends MetricFamily<UntypedMetricFamily.Untype
     }
 
     @Override
-    public MetricFamily<Untyped> cache() {
+    public MetricFamily<Untyped> cachedCopy() {
         final List<Untyped> metrics = metrics().collect(Collectors.toList());
 
         return new UntypedMetricFamily(name, help, metrics::stream);

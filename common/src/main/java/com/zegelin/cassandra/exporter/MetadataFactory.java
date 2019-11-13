@@ -38,22 +38,22 @@ public abstract class MetadataFactory {
     }
 
     private final LoadingCache<InetAddress, Labels> endpointLabelsCache = CacheBuilder.newBuilder()
-            .expireAfterWrite(1,TimeUnit.MINUTES)
-                .build(new CacheLoader<InetAddress, Labels>() {
-        @Override
-        public Labels load(final InetAddress key) {
-            final ImmutableMap.Builder<String, String> labelsBuilder = ImmutableMap.<String, String>builder();
+            .expireAfterWrite(1, TimeUnit.MINUTES)
+            .build(new CacheLoader<InetAddress, Labels>() {
+                @Override
+                public Labels load(final InetAddress key) {
+                    final ImmutableMap.Builder<String, String> labelsBuilder = ImmutableMap.<String, String>builder();
 
-            labelsBuilder.put("endpoint", InetAddresses.toAddrString(key));
+                    labelsBuilder.put("endpoint", InetAddresses.toAddrString(key));
 
-            endpointMetadata(key).ifPresent(metadata -> {
-                labelsBuilder.put("endpoint_datacenter", metadata.dataCenter());
-                labelsBuilder.put("endpoint_rack", metadata.rack());
+                    endpointMetadata(key).ifPresent(metadata -> {
+                        labelsBuilder.put("endpoint_datacenter", metadata.dataCenter());
+                        labelsBuilder.put("endpoint_rack", metadata.rack());
+                    });
+
+                    return new Labels(labelsBuilder.build());
+                }
             });
-
-            return new Labels(labelsBuilder.build());
-        }
-    });
 
     public abstract Optional<IndexMetadata> indexMetadata(final String keyspaceName, final String tableName, final String indexName);
 

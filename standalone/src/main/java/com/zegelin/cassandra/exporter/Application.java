@@ -21,7 +21,9 @@ import javax.management.remote.JMXConnectionNotification;
 import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
+import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -85,53 +87,10 @@ public class Application implements Callable<Void> {
     public Void call() throws Exception {
         setRootLoggerLevel();
 
+        final MBeanServerConnection mBeanServerConnection = establishMBeanServerConnection();
 
-        final MBeanServerConnection mBeanServerConnection;
-        {
-            Map<String, String[]> jmxEnvironment = null;
-
-            if (jmxUser != null ^ jmxPassword != null) {
-                throw new ParameterException(commandSpec.commandLine(), "Both --jmx-user and --jmx-password are required when either is used.");
-            }
-
-            if (jmxUser != null && jmxPassword != null) {
-                jmxEnvironment = ImmutableMap.of(
-                        JMXConnector.CREDENTIALS, new String[]{jmxUser, jmxPassword}
-                );
-            }
-
-            final JMXConnector connector = JMXConnectorFactory.connect(jmxServiceURL, jmxEnvironment);
-            mBeanServerConnection = connector.getMBeanServerConnection();
-
-            connector.addConnectionNotificationListener((notification, handback) -> {
-                if (notification.getType().equals(JMXConnectionNotification.CLOSED)) {
-                    logger.error("JMX connection to {} closed.", jmxServiceURL);
-
-                    Runtime.getRuntime().exit(-1);
-                }
-            }, null, null);
-        }
-
-        final Cluster cluster;
-        final RemoteMetadataFactory remoteMetadataFactory;
-        {
-            final Cluster.Builder clusterBuilder = Cluster.builder()
-                    .addContactPointsWithPorts(cqlAddress)
-                    .withLoadBalancingPolicy(new WhiteListPolicy(new RoundRobinPolicy(), ImmutableList.of(cqlAddress)));
-
-            if (cqlUser != null ^ cqlPassword != null) {
-                throw new ParameterException(commandSpec.commandLine(), "Both --cql-user and --cql-password are required when either is used.");
-            }
-
-            if (cqlUser != null && cqlPassword != null) {
-                clusterBuilder.withCredentials(cqlUser, cqlPassword);
-            }
-
-            cluster = clusterBuilder.build();
-            cluster.connect();
-
-            remoteMetadataFactory = new RemoteMetadataFactory(cluster);
-        }
+        final Cluster cluster = establishClusterConnection();
+        final RemoteMetadataFactory remoteMetadataFactory = new RemoteMetadataFactory(cluster);
 
         final JMXHarvester harvester = new JMXHarvester(mBeanServerConnection, remoteMetadataFactory, harvesterOptions);
 
@@ -172,6 +131,50 @@ public class Application implements Callable<Void> {
         Server.start(httpServerOptions.listenAddresses, harvester, httpServerOptions.helpExposition);
 
         return null;
+    }
+
+    private Cluster establishClusterConnection() {
+        final Cluster.Builder clusterBuilder = Cluster.builder()
+                .addContactPointsWithPorts(cqlAddress)
+                .withLoadBalancingPolicy(new WhiteListPolicy(new RoundRobinPolicy(), ImmutableList.of(cqlAddress)));
+
+        if (cqlUser != null ^ cqlPassword != null) {
+            throw new ParameterException(commandSpec.commandLine(), "Both --cql-user and --cql-password are required when either is used.");
+        }
+
+        if (cqlUser != null && cqlPassword != null) {
+            clusterBuilder.withCredentials(cqlUser, cqlPassword);
+        }
+
+        final Cluster cluster = clusterBuilder.build();
+
+        cluster.connect();
+
+        return cluster;
+    }
+
+    private MBeanServerConnection establishMBeanServerConnection() throws IOException {
+        if (jmxUser != null ^ jmxPassword != null) {
+            throw new ParameterException(commandSpec.commandLine(), "Both --jmx-user and --jmx-password are required when either is used.");
+        }
+
+        Map<String, String[]> jmxEnvironment = new HashMap<>();
+        if (jmxUser != null && jmxPassword != null) {
+            jmxEnvironment.put(JMXConnector.CREDENTIALS, new String[]{jmxUser, jmxPassword});
+        }
+
+        final JMXConnector connector = JMXConnectorFactory.connect(jmxServiceURL, jmxEnvironment);
+        final MBeanServerConnection mBeanServerConnection = connector.getMBeanServerConnection();
+
+        connector.addConnectionNotificationListener((notification, handback) -> {
+            if (notification.getType().equals(JMXConnectionNotification.CLOSED)) {
+                logger.error("JMX connection to {} closed.", jmxServiceURL);
+
+                Runtime.getRuntime().exit(-1);
+            }
+        }, null, null);
+
+        return mBeanServerConnection;
     }
 
 

@@ -13,7 +13,7 @@ public abstract class InetSocketAddressTypeConverter implements CommandLine.ITyp
         final List<String> addressParts = Splitter.on(':').limit(2).splitToList(value);
 
         String hostname = addressParts.get(0).trim();
-        hostname = (hostname.length() == 0 ? null : hostname); // and empty hostname == wildcard/any
+        hostname = (hostname.length() == 0 ? null : hostname); // an empty hostname == wildcard/any
 
         int port = defaultPort();
         if (addressParts.size() == 2) {
@@ -25,8 +25,8 @@ public abstract class InetSocketAddressTypeConverter implements CommandLine.ITyp
             }
         }
 
-        // why can you pass a null InetAddress, but a null String hostname is an error...
         try {
+            // why can you pass a null InetAddress, but a null String hostname is an error...
             return (hostname == null ?
                     new InetSocketAddress((InetAddress) null, port) :
                     new InetSocketAddress(hostname, port));

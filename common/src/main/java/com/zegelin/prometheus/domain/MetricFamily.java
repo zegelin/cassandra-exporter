@@ -8,13 +8,8 @@ import java.util.stream.Stream;
 
 public abstract class MetricFamily<T extends Metric> {
     public final String name, help;
-    private Supplier<Stream<T>> metricsStreamSupplier;
 
-    protected MetricFamily(final String name, final String help, final Stream<T> metrics) {
-        this.name = name;
-        this.help = help;
-        this.metricsStreamSupplier = () -> metrics;
-    }
+    private Supplier<Stream<T>> metricsStreamSupplier;
 
     public MetricFamily(final String name, final String help, final Supplier<Stream<T>> metricsStreamSupplier) {
         this.name = name;
@@ -24,7 +19,7 @@ public abstract class MetricFamily<T extends Metric> {
 
     public abstract <R> R accept(final MetricFamilyVisitor<R> visitor);
 
-    public abstract MetricFamily<T> cache();
+    public abstract MetricFamily<T> cachedCopy();
 
     public Stream<T> metrics() {
         return metricsStreamSupplier.get();

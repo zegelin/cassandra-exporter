@@ -1,6 +1,7 @@
 package com.zegelin.cassandra.exporter.collector;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.cassandra.exporter.MBeanGroupMetricFamilyCollector;
 import com.zegelin.cassandra.exporter.MetricValueConversionFunctions;
@@ -143,8 +144,9 @@ public class LatencyMetricGroupSummaryCollector extends MBeanGroupMetricFamilyCo
                     final float count = e.latencyMetricGroup.latencyTimer.object.getCount();
                     final float sum = microsecondsToSeconds(e.latencyMetricGroup.totalLatencyCounter.object.getCount());
 
-                    final Stream<Interval> quantiles = e.latencyMetricGroup.latencyTimer.object.getIntervals()
-                            .map(i -> i.transform(MetricValueConversionFunctions::microsecondsToSeconds));
+                    final Iterable<Interval> quantiles = Iterables.transform(e.latencyMetricGroup.latencyTimer.object.getIntervals(),
+                            i -> i.transform(MetricValueConversionFunctions::nanosecondsToSeconds)
+                    );
 
                     return new SummaryMetricFamily.Summary(e.labels, sum, count, quantiles);
                 });

@@ -52,7 +52,7 @@ public class FailureDetectorMBeanMetricFamilyCollector extends MBeanGroupMetricF
                 return new NumericMetric(labels, ((Double) d.get("PHI")).floatValue());
             });
 
-            metricFamilyStreamBuilder.add(new GaugeMetricFamily("cassandra_endpoint_phi", ":evel of suspicion that an endpoint might be down.", phiMetricsStream));
+            metricFamilyStreamBuilder.add(new GaugeMetricFamily("cassandra_endpoint_phi", "level of suspicion that an endpoint might be down.", phiMetricsStream));
 
         } catch (final OpenDataException e) {
             throw new RuntimeException("Unable to collect metric cassandra_endpoint_phi.", e); // TODO: throw or log?

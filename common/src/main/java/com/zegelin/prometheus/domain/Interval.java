@@ -1,6 +1,7 @@
 package com.zegelin.prometheus.domain;
 
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import com.zegelin.function.FloatFloatFunction;
 
 import java.util.Set;
@@ -62,9 +63,8 @@ public final class Interval {
         this.value = value;
     }
 
-    public static Stream<Interval> asIntervals(final Iterable<Quantile> quantiles, final Function<Quantile, Float> valueFn) {
-        return StreamSupport.stream(quantiles.spliterator(), false)
-                .map(q -> new Interval(q, valueFn.apply(q)));
+    public static Iterable<Interval> asIntervals(final Iterable<Quantile> quantiles, final Function<Quantile, Float> valueFn) {
+        return Iterables.transform(quantiles, q -> new Interval(q, valueFn.apply(q)));
     }
 
     public Interval transform(final FloatFloatFunction valueTransformFn) {

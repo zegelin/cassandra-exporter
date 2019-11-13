@@ -39,7 +39,7 @@ public abstract class MBeanGroupMetricFamilyCollector {
 
     protected interface Factory {
         /**
-         * Create a {@link MBeanGroupMetricFamilyCollector} for the given MBean, or null if this cache
+         * Create a {@link MBeanGroupMetricFamilyCollector} for the given MBean, or null if this collector
          * doesn't support the given MBean.
          *
          * @return the MBeanGroupMetricFamilyCollector for the given MBean, or null

@@ -124,8 +124,8 @@ public abstract class Harvester {
     private final MetadataFactory metadataFactory;
 
 
-    private final Map<String, MBeanGroupMetricFamilyCollector> mBeanCollectorsByName = Collections.synchronizedMap(new HashMap<>());
-    private final Map<ObjectName, String> mBeanNameToCollectorNameMap = Collections.synchronizedMap(new HashMap<>());
+    private final Map<String, MBeanGroupMetricFamilyCollector> mBeanCollectorsByName = new ConcurrentHashMap<>();
+    private final Map<ObjectName, String> mBeanNameToCollectorNameMap = new ConcurrentHashMap<>();
 
     private final Set<Exclusion> exclusions;
     private final Set<GlobalLabel> enabledGlobalLabels;
@@ -178,14 +178,17 @@ public abstract class Harvester {
                     }
 
                     if (isExcluded(collector)) {
+                        logger.debug("Skipping registration of collector {} for MBean {} as it matches an exclusion rule.", collector.name(), name);
                         continue;
                     }
+
+                    logger.debug("Registering collector {} for MBean {}.", collector.name(), name);
 
                     mBeanCollectorsByName.merge(collector.name(), collector, MBeanGroupMetricFamilyCollector::merge);
                     mBeanNameToCollectorNameMap.put(name, collector.name());
 
                 } catch (final Exception e) {
-                    logger.warn("Failed to register collector for MBean {}", name, e);
+                    logger.warn("Failed to register collector for MBean {}.", name, e);
                 }
             }
         });
@@ -237,7 +240,7 @@ public abstract class Harvester {
 
                 if (collectorTimingEnabled) {
                     // call cache (collect sub-streams) and collect to time the actual collection
-                    return metricFamilyStream.map(MetricFamily::cache).collect(Collectors.toList()).stream();
+                    return metricFamilyStream.map(MetricFamily::cachedCopy).collect(Collectors.toList()).stream();
 
                 } else {
                     return metricFamilyStream;

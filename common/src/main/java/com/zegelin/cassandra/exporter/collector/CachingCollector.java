@@ -39,7 +39,7 @@ public class CachingCollector extends MBeanGroupMetricFamilyCollector {
         this.unit = unit;
 
         this.cachedCollect = Suppliers.memoizeWithExpiration(() -> {
-            return delegate.collect().map(MetricFamily::cache).collect(Collectors.toList());
+            return delegate.collect().map(MetricFamily::cachedCopy).collect(Collectors.toList());
         }, duration, unit);
     }
 
