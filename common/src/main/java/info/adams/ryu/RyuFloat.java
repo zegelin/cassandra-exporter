@@ -95,38 +95,33 @@ public final class RyuFloat {
         System.out.println(ByteBufUtil.hexDump(buffer) + " " + f);
     }
 
-    public static void floatToString(final ByteBuf buffer, float value) {
-        floatToString(buffer, value, RoundingMode.ROUND_EVEN);
+    public static int floatToString(final ByteBuf buffer, float value) {
+        return floatToString(buffer, value, RoundingMode.ROUND_EVEN);
     }
 
-    public static void floatToString(final ByteBuf buffer, float value, RoundingMode roundingMode) {
+    public static int floatToString(final ByteBuf buffer, float value, RoundingMode roundingMode) {
         // Step 1: Decode the floating point number, and unify normalized and subnormal cases.
         // First, handle all the trivial cases.
         if (Float.isNaN(value)) {
-            ByteBufUtil.writeAscii(buffer, "NaN");
-            return;
+            return ByteBufUtil.writeAscii(buffer, "NaN");
         }
 
         if (value == Float.POSITIVE_INFINITY) {
-            ByteBufUtil.writeAscii(buffer, "Infinity");
-            return;
+            return ByteBufUtil.writeAscii(buffer, "Infinity");
         }
 
         if (value == Float.NEGATIVE_INFINITY) {
-            ByteBufUtil.writeAscii(buffer, "-Infinity");
-            return;
+            return ByteBufUtil.writeAscii(buffer, "-Infinity");
         }
 
         int bits = Float.floatToIntBits(value);
 
         if (bits == 0) {
-            ByteBufUtil.writeAscii(buffer, "0.0");
-            return;
+            return ByteBufUtil.writeAscii(buffer, "0.0");
         }
 
         if (bits == 0x80000000) {
-            ByteBufUtil.writeAscii(buffer, "-0.0");
-            return;
+            return ByteBufUtil.writeAscii(buffer, "-0.0");
         }
 
         // Otherwise extract the mantissa and exponent bits and run the full algorithm.
@@ -387,6 +382,7 @@ public final class RyuFloat {
         }
 
         buffer.writeBytes(result, 0, index);
+        return index;
     }
 
     private static int pow5bits(int e) {

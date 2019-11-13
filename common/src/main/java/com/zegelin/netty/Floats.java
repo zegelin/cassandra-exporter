@@ -9,11 +9,11 @@ public final class Floats {
 
     private Floats() {}
 
-    public static void writeFloatString(final ByteBuf buffer, final float f) {
+    public static int writeFloatString(final ByteBuf buffer, final float f) {
         if (useFastFloat) {
-            RyuFloat.floatToString(buffer, f);
+            return RyuFloat.floatToString(buffer, f);
         } else {
-            ByteBufUtil.writeAscii(buffer, Float.toString(f));
+            return ByteBufUtil.writeAscii(buffer, Float.toString(f));
         }
     }
 }
