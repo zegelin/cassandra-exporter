@@ -4,6 +4,8 @@ import com.google.common.base.Stopwatch;
 import com.google.common.escape.CharEscaperBuilder;
 import com.google.common.escape.Escaper;
 import com.zegelin.prometheus.domain.*;
+import com.zegelin.prometheus.exposition.ExpositionSink;
+import com.zegelin.prometheus.exposition.NettyExpositionSink;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -36,7 +38,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
         SUMMARY,
         UNTYPED;
 
-        void write(final ByteBuf buffer) {
+        void write(final ExpositionSink<?> buffer) {
             JsonFragment.writeAsciiString(buffer, name());
         }
     }
@@ -86,7 +88,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
 
 
     public static ByteBuf formatLabels(final Map<String, String> labels) {
-        final ByteBuf buffer = Unpooled.buffer();
+        final NettyExpositionSink buffer = new NettyExpositionSink(Unpooled.buffer());
 
         JsonToken.OBJECT_START.write(buffer);
 
@@ -105,16 +107,16 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
 
         JsonToken.OBJECT_END.write(buffer);
 
-        return buffer;
+        return buffer.getBuffer();
     }
 
 
     class MetricFamilyWriter {
-        private final Consumer<ByteBuf> headerWriter;
-        private final Function<ByteBuf, Boolean> metricWriter;
+        private final Consumer<ExpositionSink<?>> headerWriter;
+        private final Function<ExpositionSink<?>, Boolean> metricWriter;
 
-        class HeaderVisitor implements MetricFamilyVisitor<Consumer<ByteBuf>> {
-            private void writeFamilyHeader(final MetricFamily<?> metricFamily, final ByteBuf buffer, final MetricFamilyType type) {
+        class HeaderVisitor implements MetricFamilyVisitor<Consumer<ExpositionSink<?>>> {
+            private void writeFamilyHeader(final MetricFamily<?> metricFamily, final ExpositionSink<?> buffer, final MetricFamilyType type) {
                 writeObjectKey(buffer, metricFamily.name);
 
                 JsonToken.OBJECT_START.write(buffer);
@@ -135,38 +137,38 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
                 JsonToken.ARRAY_START.write(buffer);
             }
 
-            private Consumer<ByteBuf> forType(final MetricFamily<?> metricFamily, final MetricFamilyType type) {
+            private Consumer<ExpositionSink<?>> forType(final MetricFamily<?> metricFamily, final MetricFamilyType type) {
                 return (buffer) -> writeFamilyHeader(metricFamily, buffer, type);
             }
 
             @Override
-            public Consumer<ByteBuf> visit(final CounterMetricFamily metricFamily) {
+            public Consumer<ExpositionSink<?>> visit(final CounterMetricFamily metricFamily) {
                 return forType(metricFamily, MetricFamilyType.COUNTER);
             }
 
             @Override
-            public Consumer<ByteBuf> visit(final GaugeMetricFamily metricFamily) {
+            public Consumer<ExpositionSink<?>> visit(final GaugeMetricFamily metricFamily) {
                 return forType(metricFamily, MetricFamilyType.GAUGE);
             }
 
             @Override
-            public Consumer<ByteBuf> visit(final SummaryMetricFamily metricFamily) {
+            public Consumer<ExpositionSink<?>> visit(final SummaryMetricFamily metricFamily) {
                 return forType(metricFamily, MetricFamilyType.SUMMARY);
             }
 
             @Override
-            public Consumer<ByteBuf> visit(final HistogramMetricFamily metricFamily) {
+            public Consumer<ExpositionSink<?>> visit(final HistogramMetricFamily metricFamily) {
                 return forType(metricFamily, MetricFamilyType.HISTOGRAM);
             }
 
             @Override
-            public Consumer<ByteBuf> visit(final UntypedMetricFamily metricFamily) {
+            public Consumer<ExpositionSink<?>> visit(final UntypedMetricFamily metricFamily) {
                 return forType(metricFamily, MetricFamilyType.UNTYPED);
             }
         }
 
-        class MetricVisitor implements MetricFamilyVisitor<Function<ByteBuf, Boolean>> {
-            private <T extends Metric> Function<ByteBuf, Boolean> metricWriter(final MetricFamily<T> metricFamily, final BiConsumer<T, ByteBuf> valueWriter) {
+        class MetricVisitor implements MetricFamilyVisitor<Function<ExpositionSink<?>, Boolean>> {
+            private <T extends Metric> Function<ExpositionSink<?>, Boolean> metricWriter(final MetricFamily<T> metricFamily, final BiConsumer<T, ExpositionSink<?>> valueWriter) {
                 final Iterator<T> metricIterator = metricFamily.metrics().iterator();
 
                 return (buffer) -> {
@@ -176,7 +178,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
                         JsonToken.OBJECT_START.write(buffer);
                         writeObjectKey(buffer, "labels");
                         if (metric.labels != null) {
-                            buffer.writeBytes(metric.labels.asJSONFormatUTF8EncodedByteBuf().slice());
+                            buffer.writeBytes(metric.labels.asJSONFormatUTF8EncodedByteBuf().nioBuffer());
                         } else {
                             writeNull(buffer);
                         }
@@ -200,20 +202,20 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
             }
 
             @Override
-            public Function<ByteBuf, Boolean> visit(final CounterMetricFamily metricFamily) {
+            public Function<ExpositionSink<?>, Boolean> visit(final CounterMetricFamily metricFamily) {
                 return metricWriter(metricFamily, (counter, buffer) -> {
                     writeFloat(buffer, counter.value);
                 });
             }
 
             @Override
-            public Function<ByteBuf, Boolean> visit(final GaugeMetricFamily metricFamily) {
+            public Function<ExpositionSink<?>, Boolean> visit(final GaugeMetricFamily metricFamily) {
                 return metricWriter(metricFamily, (gauge, buffer) -> {
                     writeFloat(buffer, gauge.value);
                 });
             }
 
-            private void writeSumAndCount(final ByteBuf buffer, final float sum, final float count) {
+            private void writeSumAndCount(final ExpositionSink<?> buffer, final float sum, final float count) {
                 writeObjectKey(buffer, "sum");
                 writeFloat(buffer, sum);
 
@@ -223,7 +225,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
                 writeFloat(buffer, count);
             }
 
-            private void writeIntervals(final ByteBuf buffer, final Iterable<Interval> intervals) {
+            private void writeIntervals(final ExpositionSink<?> buffer, final Iterable<Interval> intervals) {
                 JsonToken.OBJECT_START.write(buffer);
 
                 final Iterator<Interval> iterator = intervals.iterator();
@@ -243,7 +245,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
             }
 
             @Override
-            public Function<ByteBuf, Boolean> visit(final SummaryMetricFamily metricFamily) {
+            public Function<ExpositionSink<?>, Boolean> visit(final SummaryMetricFamily metricFamily) {
                 return metricWriter(metricFamily, (summary, buffer) -> {
                     JsonToken.OBJECT_START.write(buffer);
 
@@ -259,7 +261,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
             }
 
             @Override
-            public Function<ByteBuf, Boolean> visit(final HistogramMetricFamily metricFamily) {
+            public Function<ExpositionSink<?>, Boolean> visit(final HistogramMetricFamily metricFamily) {
                 return metricWriter(metricFamily, (histogram, buffer) -> {
                     JsonToken.OBJECT_START.write(buffer);
 
@@ -275,9 +277,9 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
             }
 
             @Override
-            public Function<ByteBuf, Boolean> visit(final UntypedMetricFamily metricFamily) {
+            public Function<ExpositionSink<?>, Boolean> visit(final UntypedMetricFamily metricFamily) {
                 return metricWriter(metricFamily, (untyped, buffer) -> {
-                    writeFloat(buffer, untyped.value);
+                    buffer.writeFloat(untyped.value);
                 });
             }
         }
@@ -287,21 +289,21 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
             this.metricWriter = metricFamily.accept(new MetricVisitor());
         }
 
-        void writeFamilyHeader(final ByteBuf buffer) {
+        void writeFamilyHeader(final ExpositionSink<?> buffer) {
             this.headerWriter.accept(buffer);
         }
 
-        void writeFamilyFooter(final ByteBuf buffer) {
+        void writeFamilyFooter(final ExpositionSink<?> buffer) {
             JsonToken.ARRAY_END.write(buffer);
             JsonToken.OBJECT_END.write(buffer);
         }
 
-        boolean writeMetric(final ByteBuf buffer) {
+        boolean writeMetric(final ExpositionSink<?> buffer) {
             return this.metricWriter.apply(buffer);
         }
     }
 
-    private void writeStatistics(final ByteBuf chunkBuffer) {
+    private void writeStatistics(final ExpositionSink<?> chunkBuffer) {
         JsonToken.OBJECT_START.write(chunkBuffer);
 
         writeObjectKey(chunkBuffer, "expositionTime");
@@ -320,7 +322,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
         JsonToken.OBJECT_END.write(chunkBuffer);
     }
 
-    private void nextSlice(final ByteBuf chunkBuffer) {
+    private void nextSlice(final ExpositionSink<?> chunkBuffer) {
         switch (state) {
             case HEADER:
                 stopwatch.start();
@@ -333,7 +335,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
                 JsonToken.COMMA.write(chunkBuffer);
 
                 writeObjectKey(chunkBuffer, "globalLabels");
-                chunkBuffer.writeBytes(globalLabels.asJSONFormatUTF8EncodedByteBuf().slice());
+                chunkBuffer.writeBytes(globalLabels.asJSONFormatUTF8EncodedByteBuf().nioBuffer());
 
                 JsonToken.COMMA.write(chunkBuffer);
 
@@ -400,12 +402,12 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
     }
 
     @Override
-    public ByteBuf readChunk(final ChannelHandlerContext ctx) throws Exception {
+    public ByteBuf readChunk(final ChannelHandlerContext ctx) {
         final ByteBuf chunkBuffer = ctx.alloc().buffer(1024 * 1024 * 5);
 
         // add slices till we hit the chunk size (or slightly over it), or hit EOF
         while (chunkBuffer.readableBytes() < 1024 * 1024 && state != State.EOF) {
-            nextSlice(chunkBuffer);
+            nextSlice(new NettyExpositionSink(chunkBuffer));
         }
 
         return chunkBuffer;
