@@ -5,11 +5,10 @@ import com.google.common.escape.CharEscaperBuilder;
 import com.google.common.escape.Escaper;
 import com.zegelin.prometheus.domain.*;
 import com.zegelin.prometheus.exposition.ExpositionSink;
+import com.zegelin.prometheus.exposition.FormattedExposition;
 import com.zegelin.prometheus.exposition.NettyExpositionSink;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.stream.ChunkedInput;
 
 import java.time.Instant;
 import java.util.Iterator;
@@ -22,7 +21,7 @@ import java.util.stream.Stream;
 
 import static com.zegelin.prometheus.exposition.json.JsonFragment.*;
 
-public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
+public class JsonFormatExposition implements FormattedExposition {
     private enum State {
         HEADER,
         METRIC_FAMILY,
@@ -70,7 +69,7 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
     private final Stopwatch stopwatch = Stopwatch.createUnstarted();
 
 
-    public JsonFormatChunkedInput(final Stream<MetricFamily> metricFamilies, final Instant timestamp, final Labels globalLabels, final boolean includeHelp) {
+    public JsonFormatExposition(final Stream<MetricFamily> metricFamilies, final Instant timestamp, final Labels globalLabels, final boolean includeHelp) {
         this.metricFamilyIterator = metricFamilies.iterator();
         this.timestamp = timestamp;
         this.globalLabels = globalLabels;
@@ -78,14 +77,9 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
     }
 
     @Override
-    public boolean isEndOfInput() throws Exception {
+    public boolean isEndOfInput() {
         return state == State.EOF;
     }
-
-    @Override
-    public void close() throws Exception {
-    }
-
 
     public static ByteBuf formatLabels(final Map<String, String> labels) {
         final NettyExpositionSink buffer = new NettyExpositionSink(Unpooled.buffer());
@@ -322,7 +316,8 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
         JsonToken.OBJECT_END.write(chunkBuffer);
     }
 
-    private void nextSlice(final ExpositionSink<?> chunkBuffer) {
+    @Override
+    public void nextSlice(final ExpositionSink<?> chunkBuffer) {
         switch (state) {
             case HEADER:
                 stopwatch.start();
@@ -399,17 +394,5 @@ public class JsonFormatChunkedInput implements ChunkedInput<ByteBuf> {
             default:
                 throw new IllegalStateException();
         }
-    }
-
-    @Override
-    public ByteBuf readChunk(final ChannelHandlerContext ctx) {
-        final ByteBuf chunkBuffer = ctx.alloc().buffer(1024 * 1024 * 5);
-
-        // add slices till we hit the chunk size (or slightly over it), or hit EOF
-        while (chunkBuffer.readableBytes() < 1024 * 1024 && state != State.EOF) {
-            nextSlice(new NettyExpositionSink(chunkBuffer));
-        }
-
-        return chunkBuffer;
     }
 }

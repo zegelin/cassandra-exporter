@@ -10,8 +10,9 @@ import com.zegelin.netty.Resources;
 import com.zegelin.cassandra.exporter.Harvester;
 import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
-import com.zegelin.prometheus.exposition.json.JsonFormatChunkedInput;
-import com.zegelin.prometheus.exposition.text.TextFormatChunkedInput;
+import com.zegelin.prometheus.exposition.json.JsonFormatExposition;
+import com.zegelin.prometheus.exposition.text.TextFormatExposition;
+import com.zegelin.prometheus.exposition.FormattedChunkedInput;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelFuture;
@@ -296,7 +297,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
                 lastWriteFuture = ctx.writeAndFlush(response);
 
                 if (request.getMethod() == HttpMethod.GET) {
-                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new TextFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp)));
+                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new FormattedChunkedInput(new TextFormatExposition(metricFamilyStream, timestamp, globalLabels, includeHelp))));
                 }
 
                 return lastWriteFuture;
@@ -308,7 +309,7 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
                 lastWriteFuture = ctx.writeAndFlush(response);
 
                 if (request.getMethod() == HttpMethod.GET) {
-                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new JsonFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp)));
+                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new FormattedChunkedInput(new JsonFormatExposition(metricFamilyStream, timestamp, globalLabels, includeHelp))));
                 }
 
                 return lastWriteFuture;
