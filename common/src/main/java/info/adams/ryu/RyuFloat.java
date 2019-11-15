@@ -15,11 +15,12 @@ package info.adams.ryu;
 // limitations under the License.
 
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufUtil;
+import org.apache.commons.codec.binary.Hex;
 
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+
+import static java.nio.charset.StandardCharsets.US_ASCII;
 
 /**
  * An implementation of Ryu for float.
@@ -90,38 +91,38 @@ public final class RyuFloat {
     public static void main(String[] args) {
         DEBUG = true;
         float f = 0.33007812f;
-        final ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer();
+        final ByteBuffer buffer = ByteBuffer.allocate(10);
         floatToString(buffer, f, RoundingMode.ROUND_EVEN);
-        System.out.println(ByteBufUtil.hexDump(buffer) + " " + f);
+        System.out.println(Hex.encodeHexString(buffer.array()) + " " + f);
     }
 
-    public static int floatToString(final ByteBuf buffer, float value) {
+    public static int floatToString(final ByteBuffer buffer, float value) {
         return floatToString(buffer, value, RoundingMode.ROUND_EVEN);
     }
 
-    public static int floatToString(final ByteBuf buffer, float value, RoundingMode roundingMode) {
+    public static int floatToString(final ByteBuffer buffer, float value, RoundingMode roundingMode) {
         // Step 1: Decode the floating point number, and unify normalized and subnormal cases.
         // First, handle all the trivial cases.
         if (Float.isNaN(value)) {
-            return ByteBufUtil.writeAscii(buffer, "NaN");
+            return writeAscii(buffer, "NaN");
         }
 
         if (value == Float.POSITIVE_INFINITY) {
-            return ByteBufUtil.writeAscii(buffer, "Infinity");
+            return writeAscii(buffer, "Infinity");
         }
 
         if (value == Float.NEGATIVE_INFINITY) {
-            return ByteBufUtil.writeAscii(buffer, "-Infinity");
+            return writeAscii(buffer, "-Infinity");
         }
 
         int bits = Float.floatToIntBits(value);
 
         if (bits == 0) {
-            return ByteBufUtil.writeAscii(buffer, "0.0");
+            return writeAscii(buffer, "0.0");
         }
 
         if (bits == 0x80000000) {
-            return ByteBufUtil.writeAscii(buffer, "-0.0");
+            return writeAscii(buffer, "-0.0");
         }
 
         // Otherwise extract the mantissa and exponent bits and run the full algorithm.
@@ -381,8 +382,14 @@ public final class RyuFloat {
             }
         }
 
-        buffer.writeBytes(result, 0, index);
+        buffer.put(result, 0, index);
         return index;
+    }
+
+    private static int writeAscii(final ByteBuffer buffer, String asciiString) {
+        byte[] byteBuffer = asciiString.getBytes(US_ASCII);
+        buffer.put(byteBuffer);
+        return byteBuffer.length;
     }
 
     private static int pow5bits(int e) {
