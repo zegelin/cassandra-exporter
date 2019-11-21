@@ -60,6 +60,8 @@ public class StorageServiceMBeanMetricFamilyCollector extends MBeanGroupMetricFa
 
         final Map<Labels, FileStore> labeledFileStores = new HashMap<>();
 
+        // TODO: make available the directory name and type (data, commitlog, etc)
+
         for (final String directory : directories) {
             try {
                 final FileStore fileStore = Files.getFileStore(Paths.get(directory));

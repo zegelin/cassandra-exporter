@@ -184,13 +184,17 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
                     final ImmutableMap.Builder<String, String> labelsBuilder = ImmutableMap.builder();
 
-                    labelsBuilder.put("operation", matcher.group("operation").toLowerCase());
+                    final String operation = matcher.group("operation").toLowerCase();
+                    final String consistency = matcher.group("consistency");
 
-                    {
-                        final String consistency = matcher.group("consistency");
-                        if (consistency != null) {
-                            labelsBuilder.put("consistency", consistency);
-                        }
+                    labelsBuilder.put("operation", operation);
+
+                    if (consistency == null && (operation.equals("read") || operation.equals("write"))) {
+                        // read/write without a consistency level is a total -- exclude
+                        return null;
+
+                    } else if (consistency != null) {
+                        labelsBuilder.put("consistency", consistency);
                     }
 
                     return labelsBuilder.build();
@@ -514,6 +518,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         // org.apache.cassandra.metrics.CommitLogMetrics
         {
+            // TODO: Rename completed_tasks_total and pending_tasks to something more appropriate
             builder.add(commitLogMetricFactory(functionalCollectorConstructor(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", "Total number of commit log messages written (since server start)."));
             builder.add(commitLogMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "PendingTasks", "pending_tasks", "Number of commit log messages written not yet fsync’d."));
             builder.add(commitLogMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "TotalCommitLogSize", "size_bytes", "Total size used by all current commit log segments."));
