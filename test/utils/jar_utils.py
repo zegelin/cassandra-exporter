@@ -1,4 +1,5 @@
 import argparse
+import logging
 import re
 import subprocess
 import zipfile
@@ -11,6 +12,8 @@ from utils.path_utils import existing_file_arg
 
 
 class ExporterJar(namedtuple('ExporterJar', ['path', 'type'])):
+    logger = logging.getLogger(f'{__name__}.{__qualname__}')
+
     class ExporterType(Enum):
         AGENT = ('Premain-Class', 'com.zegelin.cassandra.exporter.Agent')
         STANDALONE = ('Main-Class', 'com.zegelin.cassandra.exporter.Application')
@@ -61,13 +64,25 @@ class ExporterJar(namedtuple('ExporterJar', ['path', 'type'])):
     @staticmethod
     def default_jar_path():
         project_dir = Path(__file__).parents[2]
+
+        root_pom = ElementTree.parse(project_dir / 'pom.xml').getroot()
+        project_version = root_pom.find('{http://maven.apache.org/POM/4.0.0}version').text
+
+        return project_dir / f'agent/target/cassandra-exporter-agent-{project_version}.jar'
+
+    @classmethod
+    def add_jar_argument(cls, name, parser):
         try:
-            root_pom = ElementTree.parse(project_dir / 'pom.xml').getroot()
-            project_version = root_pom.find('{http://maven.apache.org/POM/4.0.0}version').text
+            default_path = ExporterJar.default_jar_path()
+            default_help = '(default: %(default)s)'
 
-            return project_dir / f'agent/target/cassandra-exporter-agent-{project_version}.jar'
+        except Exception as e:
+            cls.logger.warning('failed to locate default exporter Jar', exc_info=True)
 
-        except:
-            return None
+            default_path = None
+            default_help = f'(default: failed to locate default exporter Jar: {e})'
 
-
+        parser.add_argument(name, type=ExporterJar.from_path,
+                            help="location of the cassandra-exporter Jar, either agent or standalone " + default_help,
+                            required=default_path is None,
+                            default=str(default_path))

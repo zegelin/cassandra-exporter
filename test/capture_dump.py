@@ -10,27 +10,13 @@ from pathlib import Path
 
 import cassandra.cluster
 import cassandra.connection
-import yaml
+
 
 from utils.ccm import TestCluster
 from utils.jar_utils import ExporterJar
 from utils.path_utils import existing_file_arg
+from utils.schema import CqlSchema
 
-
-def schema_yaml(path):
-    path = existing_file_arg(path)
-
-    with open(path, 'r') as f:
-        schema_yaml = yaml.load(f, Loader=yaml.SafeLoader)
-
-        if not isinstance(schema_yaml, list):
-            raise argparse.ArgumentTypeError(f'root of the schema YAML must be a list. Got a {type(schema_yaml).__name__}.')
-
-        for i, o in enumerate(schema_yaml):
-            if not isinstance(o, str):
-                raise argparse.ArgumentTypeError(f'schema YAML must be a list of statement strings. Item {i} is a {type(o).__name__}.')
-
-        return schema_yaml
 
 def cluster_directory(path):
     path = Path(path)
@@ -56,9 +42,7 @@ def output_directory(path):
 
     return path
 
-def default_schema_path():
-    test_dir = Path(__file__).parent
-    return test_dir / "schema.yaml"
+
 
 
 if __name__ == '__main__':
@@ -77,7 +61,7 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--nodes', type=int, help="number of nodes (default: %(default)s)", default=6)
 
     parser.add_argument('-j', '--exporter-jar', type=ExporterJar.from_path, help="location of the cassandra-exporter jar, either agent or standalone (default: %(default)s)", default=str(ExporterJar.default_jar_path()))
-    parser.add_argument('-s', '--schema', type=schema_yaml, help="CQL schema to apply (default: %(default)s)", default=str(default_schema_path()))
+    parser.add_argument('-s', '--schema', type=CqlSchema.from_path, help="CQL schema to apply (default: %(default)s)", default=str(CqlSchema.default_schema_path()))
 
     args = parser.parse_args()
 
@@ -97,6 +81,9 @@ if __name__ == '__main__':
 
         print('Starting cluster...')
         ccm_cluster.start()
+
+        print('Applying schema...')
+        ccm_cluster.apply_schema()
 
         print('Connecting to cluster...')
         contact_points = map(lambda n: cassandra.connection.DefaultEndPoint(*n.network_interfaces['binary']), ccm_cluster.nodelist())

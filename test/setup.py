@@ -7,5 +7,5 @@ setup(
     author='Adam Zegelin',
     author_email='adam@instaclustr.com',
     packages=['cassandra-exporter-e2e-tests'],
-    install_requires=['ccm', 'prometheus_client', 'cassandra-driver', 'frozendict'],
+    install_requires=['ccm', 'prometheus_client', 'cassandra-driver', 'frozendict', 'pyyaml', 'tqdm'],
 )

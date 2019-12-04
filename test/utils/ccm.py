@@ -7,6 +7,7 @@ from typing import List
 from ccmlib.cluster import Cluster
 
 from utils.jar_utils import ExporterJar
+from utils.schema import CqlSchema
 
 
 class TestCluster(Cluster):
@@ -94,6 +95,14 @@ class TestCluster(Cluster):
             shutil.rmtree(self.get_path())
 
         return result
+
+    def apply_schema(self, schema: CqlSchema):
+        cql_cluster = cassandra.cluster.Cluster(list(contact_points))
+        with cql_cluster.connect() as cql_session:
+            print('Applying schema...')
+            for stmt in args.schema:
+                print('Executing "{}"...'.format(stmt.split('\n')[0]))
+                cql_session.execute(stmt)
 
     def __enter__(self):
         return self
