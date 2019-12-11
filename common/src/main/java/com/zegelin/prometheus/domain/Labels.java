@@ -55,9 +55,22 @@ public final class Labels extends ForwardingMap<String, String> {
 
     @Override
     protected void finalize() throws Throwable {
-        this.plainTextFormatUTF8EncodedByteBuf.release();
-        this.jsonFormatUTF8EncodedByteBuf.release();
+        try {
+            maybeRelease();
+        } finally {
+            super.finalize();
+        }
+    }
 
-        super.finalize();
+    private void maybeRelease() {
+        if (this.plainTextFormatUTF8EncodedByteBuf != null) {
+            this.plainTextFormatUTF8EncodedByteBuf.release();
+            this.plainTextFormatUTF8EncodedByteBuf = null;
+        }
+
+        if (this.jsonFormatUTF8EncodedByteBuf != null) {
+            this.jsonFormatUTF8EncodedByteBuf.release();
+            this.jsonFormatUTF8EncodedByteBuf = null;
+        }
     }
 }
