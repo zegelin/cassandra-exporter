@@ -100,28 +100,34 @@ The format/structure of the JSON output is subject to change.
 
 The available command line options may be seen by passing `-h`/`--help`:
 
-    Usage: cassandra-exporter-standalone [-hV] [--enable-collector-timing]
-                                         [--enable-per-thread-cpu-times]
-                                         [--exclude-system-tables]
-                                         [--no-fast-float] [--no-global-labels]
-                                         [--no-table-labels] [--cql-address=
-                                         [ADDRESS][:PORT]]
-                                         [--cql-password=PASSWORD]
-                                         [--cql-user=NAME] [--family-help=VALUE]
-                                         [--jmx-password=PASSWORD]
-                                         [--jmx-service-url=URL] [--jmx-user=NAME]
-                                         [--exclude-keyspaces=<excludedKeyspaces>]..
-                                         . [-g=LABEL[,LABEL...]]... [-l=[ADDRESS][:
-                                         PORT]]... [-t=LABEL[,LABEL...]]...
-                                         [-e=EXCLUSION...]...
+    Usage: cassandra-exporter [-hV] [--enable-collector-timing]
+                              [--enable-per-thread-cpu-times]
+                              [--exclude-system-tables] [--no-fast-float]
+                              [--no-global-labels] [--no-table-labels] [-v]...
+                              [--cql-address=[ADDRESS][:PORT]]
+                              [--cql-password=PASSWORD] [--cql-user=NAME]
+                              [--family-help=VALUE] [--jmx-password=PASSWORD]
+                              [--jmx-service-url=URL] [--jmx-user=NAME]
+                              [--ssl=MODE]
+                              [--ssl-client-authentication=CLIENT-AUTHENTICATION]
+                              [--ssl-implementation=IMPLEMENTATION]
+                              [--ssl-reload-interval=SECONDS]
+                              [--ssl-server-certificate=SERVER-CERTIFICATE]
+                              [--ssl-server-key=SERVER-KEY]
+                              [--ssl-server-key-password=SERVER-KEY-PASSWORD]
+                              [--ssl-trusted-certificate=TRUSTED-CERTIFICATE]
+                              [--exclude-keyspaces=<excludedKeyspaces>]...
+                              [--ssl-ciphers=CIPHER[,CIPHER...]]...
+                              [--ssl-protocols=PROTOCOL[,PROTOCOL...]]... [-g=LABEL
+                              [,LABEL...]]... [-l=[ADDRESS][:PORT]]... [-t=LABEL[,
+                              LABEL...]]... [-e=EXCLUSION...]...
       -g, --global-labels=LABEL[,LABEL...]
                                 Select which global labels to include on all exported
                                   metrics. Valid options are: 'CLUSTER' (cluster name),
-                                  'HOST_ID' (UUID of the node), 'NODE' (node endpoint IP
-                                  address), 'DATACENTER' (DC name), 'RACK' (rack name).
-                                  The default is to include all global labels except
-                                  HOST_ID. To disable all global labels use
-                                  --no-global-labels.
+                                  'NODE' (node endpoint IP address), 'DATACENTER' (DC
+                                  name), 'RACK' (rack name). The default is to include
+                                  all global labels except HOST_ID. To disable all
+                                  global labels use --no-global-labels.
       -t, --table-labels=LABEL[,LABEL...]
                                 Select which labels to include on table-level metrics.
                                   Valid options are: 'TABLE_TYPE' (table, view or
@@ -139,7 +145,6 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   and export the results.
           --exclude-keyspaces=<excludedKeyspaces>
     
-          --no-global-labels    Disable all global labels.
       -e, --exclude=EXCLUSION...
                                 Exclude a metric family or MBean from exposition.
                                   EXCLUSION may be the full name of a metric family
@@ -153,6 +158,7 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   prefixed with '#' are considered comments and are
                                   ignored. This option may be specified more than once
                                   to define multiple exclusions.
+          --no-global-labels    Disable all global labels.
           --no-table-labels     Disable all table labels.
           --no-fast-float       Disable the use of fast float -> ascii conversion.
           --exclude-system-tables
@@ -168,6 +174,49 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   or PORT will be interpreted as a decimal IPv4 address.
                                   This option may be specified more than once to listen
                                   on multiple addresses. Defaults to '0.0.0.0:9500'
+          --ssl=MODE            Enable or disable secured communication with SSL. Valid
+                                  modes: DISABLE, ENABLE, OPTIONAL. Optional support
+                                  requires Netty version 4.0.45 or later. Defaults to
+                                  DISABLE.
+          --ssl-implementation=IMPLEMENTATION
+                                SSL implementation to use for secure communication.
+                                  OpenSSL requires platform specific libraries. Valid
+                                  implementations: OPENSSL, JDK, DISCOVER. Defaults to
+                                  DISCOVER which will use OpenSSL if required libraries
+                                  are discoverable.
+          --ssl-ciphers=CIPHER[,CIPHER...]
+                                A comma-separated list of SSL cipher suites to enable,
+                                  in the order of preference. Defaults to system
+                                  settings.
+          --ssl-protocols=PROTOCOL[,PROTOCOL...]
+                                A comma-separated list of TLS protocol versions to
+                                  enable. Defaults to system settings.
+          --ssl-reload-interval=SECONDS
+                                Interval in seconds by which keys and certificates will
+                                  be reloaded. Defaults to 0 which will disable run-time
+                                  reload of certificates.
+          --ssl-server-key=SERVER-KEY
+                                Path to the private key file for the SSL server. Must be
+                                  provided together with a server-certificate. The file
+                                  should contain a PKCS#8 private key in PEM format.
+          --ssl-server-key-password=SERVER-KEY-PASSWORD
+                                Path to the private key password file for the SSL
+                                  server. This is only required if the server-key is
+                                  password protected. The file should contain a clear
+                                  text password for the server-key.
+          --ssl-server-certificate=SERVER-CERTIFICATE
+                                Path to the certificate chain file for the SSL server.
+                                  Must be provided together with a server-key. The file
+                                  should contain an X.509 certificate chain in PEM
+                                  format.
+          --ssl-client-authentication=CLIENT-AUTHENTICATION
+                                Set SSL client authentication mode. Valid options: NONE,
+                                  OPTIONAL, REQUIRE, VALIDATE. Defaults to NONE.
+          --ssl-trusted-certificate=TRUSTED-CERTIFICATE
+                                Path to trusted certificates for verifying the remote
+                                  endpoint's certificate. The file should contain an X.
+                                  509 certificate collection in PEM format. Defaults to
+                                  the system setting.
           --family-help=VALUE   Include or exclude metric family help in the exposition
                                   format. AUTOMATIC excludes help strings when the user
                                   agent is Prometheus and includes them for all other
@@ -188,6 +237,8 @@ The available command line options may be seen by passing `-h`/`--help`:
           --cql-user=NAME       CQL authentication user name.
           --cql-password=PASSWORD
                                 CQL authentication password.
+      -v, --verbose             Enable verbose logging. Multiple invocations increase
+                                  the verbosity.
       -h, --help                Show this help message and exit.
       -V, --version             Print version information and exit.
 

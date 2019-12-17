@@ -4,6 +4,8 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.zegelin.cassandra.exporter.Harvester;
+import com.zegelin.cassandra.exporter.cli.HttpServerOptions;
+import com.zegelin.cassandra.exporter.netty.ssl.SslSupport;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
@@ -41,10 +43,12 @@ public class Server {
     public static class ChildInitializer extends ChannelInitializer<SocketChannel> {
         private final Harvester harvester;
         private final HttpHandler.HelpExposition helpExposition;
+        private final SslSupport sslSupport;
 
-        ChildInitializer(final Harvester harvester, final HttpHandler.HelpExposition helpExposition) {
+        ChildInitializer(final Harvester harvester, final HttpServerOptions httpServerOptions) {
             this.harvester = harvester;
-            this.helpExposition = helpExposition;
+            this.helpExposition = httpServerOptions.helpExposition;
+            this.sslSupport = new SslSupport(httpServerOptions);
         }
 
         @Override
@@ -55,12 +59,12 @@ public class Server {
                     .addLast(new HttpContentCompressor())
                     .addLast(new ChunkedWriteHandler())
                     .addLast(new HttpHandler(harvester, helpExposition));
+
+            sslSupport.maybeAddHandler(ch);
         }
     }
 
-    public static Server start(final List<InetSocketAddress> listenAddresses,
-                             final Harvester harvester,
-                             final HttpHandler.HelpExposition helpExposition) throws InterruptedException {
+    public static Server start(final Harvester harvester, final HttpServerOptions httpServerOptions) throws InterruptedException {
 
         final ThreadFactory threadFactory = new ThreadFactoryBuilder()
                 .setDaemon(true)
@@ -74,13 +78,13 @@ public class Server {
         bootstrap.group(eventLoopGroup)
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .channel(NioServerSocketChannel.class)
-                .childHandler(new ChildInitializer(harvester, helpExposition));
+                .childHandler(new ChildInitializer(harvester, httpServerOptions));
 
         final List<Channel> serverChannels;
         {
             final ImmutableList.Builder<Channel> builder = ImmutableList.builder();
 
-            for (final InetSocketAddress listenAddress : listenAddresses) {
+            for (final InetSocketAddress listenAddress : httpServerOptions.listenAddresses) {
                 builder.add(bootstrap.bind(listenAddress).sync().channel());
             }
 
