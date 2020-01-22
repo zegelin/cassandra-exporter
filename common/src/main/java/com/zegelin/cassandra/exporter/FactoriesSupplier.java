@@ -38,6 +38,11 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         @FunctionalInterface
         interface Modifier {
+            /**
+             * @param keyPropertyList Map of MBean ObjectName key properties and their values.
+             * @param labels The current map of labels to be provided to the collector constructor.
+             * @return true to continue building the collector, false to abort.
+             */
             boolean modify(final Map<String, String> keyPropertyList, final Map<String, String> labels);
         }
 
@@ -63,9 +68,8 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         FactoryBuilder withLabelMaker(final LabelMaker labelMaker) {
             return this.withModifier((keyPropertyList, labels) -> {
                 labels.putAll(labelMaker.apply(keyPropertyList));
-
                 return true;
-            });
+           });
         }
 
         FactoryBuilder withHelp(final String help) {
@@ -85,16 +89,14 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
                 final Map<String, String> keyPropertyList = mBean.name.getKeyPropertyList();
 
+                final String name = String.format("cassandra_%s", metricFamilyName);
                 final Map<String, String> rawLabels = new HashMap<>();
-                {
-                    for (final Modifier modifier : modifiers) {
-                        if (!modifier.modify(keyPropertyList, rawLabels)) {
-                            return null;
-                        }
+
+                for (final Modifier modifier : modifiers) {
+                    if (!modifier.modify(keyPropertyList, rawLabels)) {
+                        return null;
                     }
                 }
-
-                final String name = String.format("cassandra_%s", metricFamilyName);
 
                 return collectorConstructor.groupCollectorForMBean(name, help, new Labels(rawLabels), mBean);
             };
@@ -173,7 +175,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         return new FactoryBuilder(collectorConstructor, objectNamePattern, metricFamilyName)
                 .withHelp(help)
-                .withLabelMaker(keyPropertyList -> {
+                .withModifier((keyPropertyList, labels) -> {
                     final String scope = keyPropertyList.get("scope");
 
                     final Pattern scopePattern = Pattern.compile("(?<operation>.*?)(-(?<consistency>.*))?");
@@ -182,22 +184,20 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
                     if (!matcher.matches())
                         throw new IllegalStateException();
 
-                    final ImmutableMap.Builder<String, String> labelsBuilder = ImmutableMap.builder();
-
                     final String operation = matcher.group("operation").toLowerCase();
                     final String consistency = matcher.group("consistency");
 
-                    labelsBuilder.put("operation", operation);
+                    labels.put("operation", operation);
 
                     if (consistency == null && (operation.equals("read") || operation.equals("write"))) {
                         // read/write without a consistency level is a total -- exclude
-                        return null;
+                        return false;
 
                     } else if (consistency != null) {
-                        labelsBuilder.put("consistency", consistency);
+                        labels.put("consistency", consistency);
                     }
 
-                    return labelsBuilder.build();
+                    return true;
                 })
                 .build();
     }
