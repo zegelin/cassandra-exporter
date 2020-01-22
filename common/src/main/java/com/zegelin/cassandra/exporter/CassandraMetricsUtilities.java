@@ -67,11 +67,13 @@ public class CassandraMetricsUtilities {
             @Override
             public Iterable<Interval> getIntervals() {
                 /*
-                  Cassandra's JmxTimerMBean converts the percentile values to microseconds,
-                  which differs to the values returned by Sampling.getSnapshot() (which are in nanoseconds).
+                  Cassandra's JmxTimerMBean converts the percentile values to a parameterised duration unit,
+                  (currently the only usage is microseconds), which differs to the values returned by
+                  Sampling.getSnapshot() (which are always in nanoseconds).
 
-                  We pay the penalty when running out-of-process to convert from nanoseconds->microseconds->nanoseconds
-                  (and eventually to seconds)!
+                  The conversion from nanoseconds -> seconds happens at a later stage. To keep things simple, we pay the
+                  penalty when running out-of-process to convert from nanoseconds-><duration-unit>->nanoseconds
+                  and then eventually to seconds!
                  */
                 final TimeUnit durationUnit = TimeUnit.valueOf(timer.getDurationUnit().toUpperCase(Locale.US));
                 final float durationFactor = durationUnit.toNanos(1L);
