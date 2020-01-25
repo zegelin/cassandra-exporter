@@ -1,7 +1,6 @@
 package com.zegelin.cassandra.exporter;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.*;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.cassandra.exporter.MBeanGroupMetricFamilyCollector.Factory;
 import com.zegelin.cassandra.exporter.cli.HarvesterOptions;
@@ -26,6 +25,10 @@ import static com.zegelin.cassandra.exporter.CollectorFunctions.*;
 
 @SuppressWarnings("SameParameterValue")
 public class FactoriesSupplier implements Supplier<List<Factory>> {
+
+    private static final Set<TableMetricScope> TABLE_SCOPE = Sets.immutableEnumSet(EnumSet.of(TableMetricScope.TABLE));
+    private static final Set<TableMetricScope> KEYSPACE_NODE_SCOPE = Sets.immutableEnumSet(EnumSet.of(TableMetricScope.KEYSPACE, TableMetricScope.NODE));
+
     /**
      * A builder of {@see MBeanGroupMetricFamilyCollector.Factory}s
      */
@@ -112,6 +115,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     private final boolean perThreadTimingEnabled;
     private final Set<TableLabels> tableLabels;
     private final Set<String> excludedKeyspaces;
+    private final Map<TableMetricScope, TableMetricScope.Filter> tableMetricScopeFilters;
 
 
     public FactoriesSupplier(final MetadataFactory metadataFactory, final HarvesterOptions options) {
@@ -119,6 +123,12 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         this.perThreadTimingEnabled = options.perThreadTimingEnabled;
         this.tableLabels = options.tableLabels;
         this.excludedKeyspaces = options.excludedKeyspaces;
+
+        this.tableMetricScopeFilters = ImmutableMap.<TableMetricScope, TableMetricScope.Filter>builder()
+                .put(TableMetricScope.NODE, options.nodeMetricsFilter)
+                .put(TableMetricScope.KEYSPACE, options.keyspaceMetricsFilter)
+                .put(TableMetricScope.TABLE, options.tableMetricsFilter)
+                .build();
     }
 
 
@@ -261,75 +271,154 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         }
     }
 
-    private Factory tableMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help) {
+    public enum TableMetricScope {
+        NODE("node_%s") {
+            @Override
+            QueryExp query(final String jmxName) {
+                return format("org.apache.cassandra.metrics:type=Table,name=%s", jmxName);
+            }
+        },
+        KEYSPACE("keyspace_%s") {
+            @Override
+            QueryExp query(final String jmxName) {
+                return format("org.apache.cassandra.metrics:type=Keyspace,keyspace=*,name=%s", jmxName);
+            }
+        },
+        TABLE("table_%s") {
+            @Override
+            QueryExp query(final String jmxName) {
+                return Query.or(
+                        format("org.apache.cassandra.metrics:type=Table,keyspace=*,scope=*,name=%s", jmxName),
+                        format("org.apache.cassandra.metrics:type=IndexTable,keyspace=*,scope=*,name=%s", jmxName)
+                );
+            }
+        };
+
+        public enum Filter {
+            ALL,
+            HISTOGRAMS,
+            NONE;
+        }
+
+        static Set<TableMetricScope> ALL_SCOPES = Sets.immutableEnumSet(EnumSet.allOf(TableMetricScope.class));
+
+        final String metricFamilyNameFormat;
+
+        TableMetricScope(final String metricFamilyNameFormat) {
+            this.metricFamilyNameFormat = metricFamilyNameFormat;
+        }
+
+        abstract QueryExp query(final String jmxName);
+    }
+
+    private Iterator<Factory> tableMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help) {
         return tableMetricFactory(collectorConstructor, jmxName, familyNameSuffix, help, ImmutableMap.of());
     }
 
-    private Factory tableCompactionMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help) {
+    private Iterator<Factory> tableCompactionMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help) {
         return tableMetricFactory(collectorConstructor, jmxName, familyNameSuffix, help, true, ImmutableMap.of());
     }
 
-    private Factory tableMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help, final Map<String, String> extraLabels) {
+    private Iterator<Factory> tableMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help, final Map<String, String> extraLabels) {
         return tableMetricFactory(collectorConstructor, jmxName, familyNameSuffix, help, false, extraLabels);
     }
 
-    private Factory tableMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help, final boolean includeCompactionLabels, final Map<String, String> extraLabels) {
-        final QueryExp objectNameQuery = Query.or(
-                format("org.apache.cassandra.metrics:type=Table,keyspace=*,scope=*,name=%s", jmxName),
-                format("org.apache.cassandra.metrics:type=IndexTable,keyspace=*,scope=*,name=%s", jmxName)
-        );
+    private Iterator<Factory> tableMetricFactory(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help, final boolean includeCompactionLabels, final Map<String, String> extraLabels) {
+        return tableMetricFactory(TableMetricScope.ALL_SCOPES, collectorConstructor, jmxName, familyNameSuffix, help, includeCompactionLabels, extraLabels);
+    }
 
-        final String metricFamilyName = String.format("table_%s", familyNameSuffix);
+    private Iterator<Factory> tableMetricFactory(final Set<TableMetricScope> tableMetricScopes, final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help) {
+        return tableMetricFactory(tableMetricScopes, collectorConstructor, jmxName, familyNameSuffix, help, ImmutableMap.of());
+    }
 
-        return new FactoryBuilder(collectorConstructor, objectNameQuery, metricFamilyName)
-                .withHelp(help)
-                .withModifier((keyPropertyList, labels) -> {
-                    final String keyspaceName = keyPropertyList.get("keyspace");
-                    final String tableName, indexName;
-                    {
-                        final String[] nameParts = keyPropertyList.get("scope").split("\\.");
+    private Iterator<Factory> tableMetricFactory(final Set<TableMetricScope> tableMetricScopes, final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help, final Map<String, String> extraLabels) {
+        return tableMetricFactory(tableMetricScopes, collectorConstructor, jmxName, familyNameSuffix, help, false, extraLabels);
+    }
 
-                        tableName = nameParts[0];
-                        indexName = (nameParts.length > 1) ? nameParts[1] : null;
+    private Iterator<Factory> tableMetricFactory(final Set<TableMetricScope> tableMetricScopes, final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help, final boolean includeCompactionLabels, final Map<String, String> extraLabels) {
+        final boolean isHistogram = jmxName.matches(".*(Histogram|Latency)$");
+
+        return tableMetricScopes.stream()
+                .filter(scope -> {
+                    final TableMetricScope.Filter filter = tableMetricScopeFilters.get(scope);
+
+                    switch (filter) {
+                        case ALL:
+                            return true;
+
+                        case HISTOGRAMS:
+                            return isHistogram;
+
+                        case NONE:
+                            // fall-through
                     }
 
-                    if (excludedKeyspaces.contains(keyspaceName)) {
-                        return false;
-                    }
-
-                    labels.putAll(extraLabels);
-                    labels.put("keyspace", keyspaceName);
-
-                    if (indexName != null) {
-                        labels.put("table", tableName);
-                        labels.put("index", indexName);
-
-                        LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labels, () -> "index");
-
-                        final Optional<MetadataFactory.IndexMetadata> indexMetadata = metadataFactory.indexMetadata(keyspaceName, tableName, indexName);
-
-                        indexMetadata.ifPresent(m -> {
-                            LabelEnum.addIfEnabled(TableLabels.INDEX_TYPE, tableLabels, labels, () -> m.indexType().name().toLowerCase());
-                            m.customClassName().ifPresent(s -> LabelEnum.addIfEnabled(TableLabels.INDEX_CLASS, tableLabels, labels, () -> s));
-                        });
-
-                    } else {
-                        labels.put("table", tableName);
-
-                        final Optional<MetadataFactory.TableMetadata> tableMetadata = metadataFactory.tableOrViewMetadata(keyspaceName, tableName);
-
-                        tableMetadata.ifPresent(m -> {
-                            LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labels, () -> m.isView() ? "view" : "table");
-
-                            if (includeCompactionLabels) {
-                                LabelEnum.addIfEnabled(TableLabels.COMPACTION_STRATEGY_CLASS, tableLabels, labels, m::compactionStrategyClassName);
-                            }
-                        });
-                    }
-
-                    return true;
+                    return false;
                 })
-                .build();
+                .map(scope -> {
+                    final QueryExp query = scope.query(jmxName);
+                    final String metricFamilyName = String.format(scope.metricFamilyNameFormat, familyNameSuffix);
+
+                    return new FactoryBuilder(collectorConstructor, query, metricFamilyName)
+                            .withHelp(help)
+                            .withModifier((keyPropertyList, labels) -> {
+                                labels.putAll(extraLabels);
+
+                                if (scope == TableMetricScope.NODE) {
+                                    return true;
+                                }
+
+                                final String keyspaceName = keyPropertyList.get("keyspace");
+
+                                if (excludedKeyspaces.contains(keyspaceName)) {
+                                    return false;
+                                }
+
+                                labels.put("keyspace", keyspaceName);
+
+                                if (scope == TableMetricScope.KEYSPACE) {
+                                    return true;
+                                }
+
+                                final String tableName, indexName;
+                                {
+                                    final String[] nameParts = keyPropertyList.get("scope").split("\\.");
+
+                                    tableName = nameParts[0];
+                                    indexName = (nameParts.length > 1) ? nameParts[1] : null;
+                                }
+
+                                if (indexName != null) {
+                                    labels.put("table", tableName);
+                                    labels.put("index", indexName);
+
+                                    LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labels, () -> "index");
+
+                                    final Optional<MetadataFactory.IndexMetadata> indexMetadata = metadataFactory.indexMetadata(keyspaceName, tableName, indexName);
+
+                                    indexMetadata.ifPresent(m -> {
+                                        LabelEnum.addIfEnabled(TableLabels.INDEX_TYPE, tableLabels, labels, () -> m.indexType().name().toLowerCase());
+                                        m.customClassName().ifPresent(s -> LabelEnum.addIfEnabled(TableLabels.INDEX_CLASS, tableLabels, labels, () -> s));
+                                    });
+
+                                } else {
+                                    labels.put("table", tableName);
+
+                                    final Optional<MetadataFactory.TableMetadata> tableMetadata = metadataFactory.tableOrViewMetadata(keyspaceName, tableName);
+
+                                    tableMetadata.ifPresent(m -> {
+                                        LabelEnum.addIfEnabled(TableLabels.TABLE_TYPE, tableLabels, labels, () -> m.isView() ? "view" : "table");
+
+                                        if (includeCompactionLabels) {
+                                            LabelEnum.addIfEnabled(TableLabels.COMPACTION_STRATEGY_CLASS, tableLabels, labels, m::compactionStrategyClassName);
+                                        }
+                                    });
+                                }
+
+                                return true;
+                            })
+                            .build();
+                }).iterator();
     }
 
     private Factory threadPoolMetric(final FactoryBuilder.CollectorConstructor collectorConstructor, final String jmxName, final String familyNameSuffix, final String help) {
@@ -429,6 +518,10 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
     private Factory cache(final Factory delegate, final long duration, final TimeUnit unit) {
         return CachingCollector.cache(delegate, duration, unit);
+    }
+
+    private Iterator<Factory> cache(final Iterator<Factory> delegates, final long duration, final TimeUnit unit) {
+        return Iterators.transform(delegates, delegate ->  CachingCollector.cache(delegate, duration, unit));
     }
 
 
@@ -587,98 +680,111 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         // org.apache.cassandra.metrics.TableMetrics (includes secondary indexes and MVs)
         {
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MemtableOnHeapSize", "memory_used_bytes", null, ImmutableMap.of("region", "on_heap", "pool", "memtable")));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MemtableOffHeapSize", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "memtable")));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MemtableLiveDataSize", "memtable_live_bytes", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MemtableOnHeapSize", "memory_used_bytes", null, ImmutableMap.of("region", "on_heap", "pool", "memtable")));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MemtableOffHeapSize", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "memtable")));
+
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MemtableLiveDataSize", "memtable_live_bytes", null));
 
             // AllMemtables* just include the secondary-index table stats... Those are already collected separately
-//            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "AllMemtablesHeapSize", "memory_used_bytes", null));
-//            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "AllMemtablesOffHeapSize", null, null));
-//            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "AllMemtablesLiveDataSize", null, null));
+//            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "AllMemtablesHeapSize", "memory_used_bytes", null));
+//            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "AllMemtablesOffHeapSize", null, null));
+//            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "AllMemtablesLiveDataSize", null, null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MemtableColumnsCount", "memtable_columns", null));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsCounter()), "MemtableSwitchCount", "memtable_switches", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MemtableColumnsCount", "memtable_columns", null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge(MetricValueConversionFunctions::neg1ToNaN)), "CompressionRatio", "compression_ratio", null));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsCounter()), "MemtableSwitchCount", "memtable_switches", null));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsCounter()), "MemtableSwitchCount", "memtable_switches", null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(histogramGaugeAsSummary()), "EstimatedPartitionSizeHistogram", "estimated_partition_size_bytes", null));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge(MetricValueConversionFunctions::neg1ToNaN)), "EstimatedPartitionCount", "estimated_partitions", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge(MetricValueConversionFunctions::neg1ToNaN)), "CompressionRatio", "compression_ratio", null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(histogramGaugeAsSummary()), "EstimatedColumnCountHistogram", "estimated_columns", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(histogramGaugeAsSummary()), "EstimatedPartitionSizeHistogram", "estimated_partition_size_bytes", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge(MetricValueConversionFunctions::neg1ToNaN)), "EstimatedPartitionCount", "estimated_partitions", null));
 
-            builder.add(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "SSTablesPerReadHistogram", "sstables_per_read", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(histogramGaugeAsSummary()), "EstimatedColumnCountHistogram", "estimated_columns", null));
+
+            builder.addAll(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "SSTablesPerReadHistogram", "sstables_per_read", null));
 //
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "ReadLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "read")));
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "ReadTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "read")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "ReadLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "read")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "ReadTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "read")));
 
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "RangeLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "range_read")));
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "RangeTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "range_read")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "RangeLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "range_read")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "RangeTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "range_read")));
 
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "WriteLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "write")));
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "WriteTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "write")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "WriteLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "write")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "WriteTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "write")));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsGauge()), "PendingFlushes", "pending_flushes", null));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsCounter()), "BytesFlushed", "flushed_bytes_total", null));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsGauge()), "PendingFlushes", "pending_flushes", null));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsGauge()), "PendingFlushes", "pending_flushes", null));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsCounter()), "BytesFlushed", "flushed_bytes_total", null));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsCounter()), "BytesFlushed", "flushed_bytes_total", null));
 
-            builder.add(tableCompactionMetricFactory(functionalCollectorConstructor(counterAsCounter()), "CompactionBytesWritten", "compaction_bytes_written_total", null));
-            builder.add(tableCompactionMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "PendingCompactions", "estimated_pending_compactions", null));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsCounter()), "CompactionBytesWritten", "compaction_bytes_written_total", null, true, ImmutableMap.of()));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsCounter()), "CompactionBytesWritten", "compaction_bytes_written_total", null, true, ImmutableMap.of()));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "PendingCompactions", "estimated_pending_compactions", null, true, ImmutableMap.of()));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "LiveSSTableCount", "live_sstables", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "LiveSSTableCount", "live_sstables", null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsGauge()), "LiveDiskSpaceUsed", "live_disk_space_bytes", null));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsGauge()), "TotalDiskSpaceUsed", "disk_space_bytes", null));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsGauge()), "LiveDiskSpaceUsed", "live_disk_space_bytes", null));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsGauge()), "LiveDiskSpaceUsed", "live_disk_space_bytes", null));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsGauge()), "TotalDiskSpaceUsed", "disk_space_bytes", null));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsGauge()), "TotalDiskSpaceUsed", "disk_space_bytes", null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MaxPartitionSize", "partition_size_maximum_bytes", null));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MeanPartitionSize", "partition_size_mean_bytes", null));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MinPartitionSize", "partition_size_minimum_bytes", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MaxPartitionSize", "partition_size_maximum_bytes", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MeanPartitionSize", "partition_size_mean_bytes", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "MinPartitionSize", "partition_size_minimum_bytes", null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsCounter()), "BloomFilterFalsePositives", "bloom_filter_false_positives_total", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsCounter()), "BloomFilterFalsePositives", "bloom_filter_false_positives_total", null));
             // "RecentBloomFilterFalsePositives" -- ignored. returns the value since the last metric read
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "BloomFilterFalseRatio", "bloom_filter_false_ratio", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "BloomFilterFalseRatio", "bloom_filter_false_ratio", null));
             // "RecentBloomFilterFalseRatio" -- ignored. returns the value since the last metric read (same as "RecentBloomFilterFalsePositives")
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "BloomFilterDiskSpaceUsed", "bloom_filter_disk_space_used_bytes", null));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "BloomFilterOffHeapMemoryUsed", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "bloom_filter")));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "BloomFilterDiskSpaceUsed", "bloom_filter_disk_space_used_bytes", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "BloomFilterOffHeapMemoryUsed", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "bloom_filter")));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "IndexSummaryOffHeapMemoryUsed", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "index_summary")));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "IndexSummaryOffHeapMemoryUsed", "memory_used_bytes", null, ImmutableMap.of("region", "off_heap", "pool", "index_summary")));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "CompressionMetadataOffHeapMemoryUsed", "compression_metadata_offheap_bytes", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "CompressionMetadataOffHeapMemoryUsed", "compression_metadata_offheap_bytes", null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "KeyCacheHitRate", "key_cache_hit_ratio", null)); // it'd be nice if the individual requests/hits/misses values were exposed
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "KeyCacheHitRate", "key_cache_hit_ratio", null)); // it'd be nice if the individual requests/hits/misses values were exposed
 
-            builder.add(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "TombstoneScannedHistogram", "tombstones_scanned", null));
-            builder.add(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "LiveScannedHistogram", "live_rows_scanned", null));
+            builder.addAll(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "TombstoneScannedHistogram", "tombstones_scanned", null));
+            builder.addAll(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "LiveScannedHistogram", "live_rows_scanned", null));
 
-            builder.add(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "ColUpdateTimeDeltaHistogram", "column_update_time_delta_seconds", null));
+            builder.addAll(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "ColUpdateTimeDeltaHistogram", "column_update_time_delta_seconds", null));
 
-            builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewLockAcquireTime", "view_lock_acquisition_seconds", null));
-            builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewReadTime", "view_read_seconds", null));
+            builder.addAll(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewLockAcquireTime", "view_lock_acquisition_seconds", null));
+            builder.addAll(tableMetricFactory(timerAsSummaryCollectorConstructor(), "ViewReadTime", "view_read_seconds", null));
 
-            builder.add(cache(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "SnapshotsSize", "snapshots_size_bytes_total", null), 5, TimeUnit.MINUTES)); // TODO: maybe make caching configurable
+            builder.addAll(cache(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge()), "SnapshotsSize", "snapshots_size_bytes_total", null), 5, TimeUnit.MINUTES)); // TODO: maybe make caching configurable
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsGauge()), "RowCacheHit", "row_cache_hits", null));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsGauge()), "RowCacheHitOutOfRange", "row_cache_misses", null, ImmutableMap.of("miss_type", "out_of_range")));
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsGauge()), "RowCacheMiss", "row_cache_misses", null, ImmutableMap.of("miss_type", "miss")));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsGauge()), "RowCacheHit", "row_cache_hits", null));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsGauge()), "RowCacheHit", "row_cache_hits", null));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsGauge()), "RowCacheHitOutOfRange", "row_cache_misses", null, ImmutableMap.of("miss_type", "out_of_range")));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsGauge()), "RowCacheHitOutOfRange", "row_cache_misses", null, ImmutableMap.of("miss_type", "out_of_range")));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsGauge()), "RowCacheMiss", "row_cache_misses", null, ImmutableMap.of("miss_type", "miss")));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsGauge()), "RowCacheMiss", "row_cache_misses", null, ImmutableMap.of("miss_type", "miss")));
 
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasPrepareLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_prepare")));
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasPrepareTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_prepare")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasPrepareLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_prepare")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasPrepareTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_prepare")));
 
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasProposeLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_propose")));
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasProposeTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_propose")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasProposeLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_propose")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasProposeTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_propose")));
 
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasCommitLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_commit")));
-            builder.add(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasCommitTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_commit")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasCommitLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_commit")));
+            builder.addAll(tableMetricFactory(LatencyMetricGroupSummaryCollector::collectorForMBean, "CasCommitTotalLatency", "operation_latency_seconds", null, ImmutableMap.of("operation", "cas_commit")));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge(MetricValueConversionFunctions::percentToRatio)), "PercentRepaired", "repaired_ratio", null));
+            builder.addAll(tableMetricFactory(functionalCollectorConstructor(numericGaugeAsGauge(MetricValueConversionFunctions::percentToRatio)), "PercentRepaired", "repaired_ratio", null));
 
-            builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "CoordinatorReadLatency", "coordinator_latency_seconds", null, ImmutableMap.of("operation", "read")));
-            builder.add(tableMetricFactory(timerAsSummaryCollectorConstructor(), "CoordinatorScanLatency", "coordinator_latency_seconds", null, ImmutableMap.of("operation", "scan")));
+            builder.addAll(tableMetricFactory(timerAsSummaryCollectorConstructor(), "CoordinatorReadLatency", "coordinator_latency_seconds", null, ImmutableMap.of("operation", "read")));
+            builder.addAll(tableMetricFactory(timerAsSummaryCollectorConstructor(), "CoordinatorScanLatency", "coordinator_latency_seconds", null, ImmutableMap.of("operation", "scan")));
 
-            builder.add(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "WaitingOnFreeMemtableSpace", "free_memtable_latency_seconds", null));
+            builder.addAll(tableMetricFactory(histogramAsSummaryCollectorConstructor(), "WaitingOnFreeMemtableSpace", "free_memtable_latency_seconds", null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsCounter()), "DroppedMutations", "dropped_mutations_total", null));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsCounter()), "DroppedMutations", "dropped_mutations_total", null));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsCounter()), "DroppedMutations", "dropped_mutations_total", null));
 
-            builder.add(tableMetricFactory(functionalCollectorConstructor(counterAsCounter()), "SpeculativeRetries", "speculative_retries_total", null));
+            builder.addAll(tableMetricFactory(TABLE_SCOPE, functionalCollectorConstructor(counterAsCounter()), "SpeculativeRetries", "speculative_retries_total", null));
+            builder.addAll(tableMetricFactory(KEYSPACE_NODE_SCOPE, functionalCollectorConstructor(numericGaugeAsCounter()), "SpeculativeRetries", "speculative_retries_total", null));
         }
 
 

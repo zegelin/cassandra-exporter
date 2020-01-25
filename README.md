@@ -100,28 +100,26 @@ The format/structure of the JSON output is subject to change.
 
 The available command line options may be seen by passing `-h`/`--help`:
 
-    Usage: cassandra-exporter-standalone [-hV] [--enable-collector-timing]
-                                         [--enable-per-thread-cpu-times]
-                                         [--exclude-system-tables]
-                                         [--no-fast-float] [--no-global-labels]
-                                         [--no-table-labels] [--cql-address=
-                                         [ADDRESS][:PORT]]
-                                         [--cql-password=PASSWORD]
-                                         [--cql-user=NAME] [--family-help=VALUE]
-                                         [--jmx-password=PASSWORD]
-                                         [--jmx-service-url=URL] [--jmx-user=NAME]
-                                         [--exclude-keyspaces=<excludedKeyspaces>]..
-                                         . [-g=LABEL[,LABEL...]]... [-l=[ADDRESS][:
-                                         PORT]]... [-t=LABEL[,LABEL...]]...
-                                         [-e=EXCLUSION...]...
+    Usage: cassandra-exporter [-hV] [--enable-collector-timing]
+                              [--enable-per-thread-cpu-times]
+                              [--exclude-system-tables] [--no-fast-float]
+                              [--no-global-labels] [--no-table-labels] [-v]...
+                              [--cql-address=[ADDRESS][:PORT]]
+                              [--cql-password=PASSWORD] [--cql-user=NAME]
+                              [--family-help=VALUE] [--jmx-password=PASSWORD]
+                              [--jmx-service-url=URL] [--jmx-user=NAME]
+                              [--keyspace-metrics=FILTER] [--node-metrics=FILTER]
+                              [--table-metrics=FILTER]
+                              [--exclude-keyspaces=<excludedKeyspaces>]... [-g=LABEL
+                              [,LABEL...]]... [-l=[ADDRESS][:PORT]]... [-t=LABEL[,
+                              LABEL...]]... [-e=EXCLUSION...]...
       -g, --global-labels=LABEL[,LABEL...]
                                 Select which global labels to include on all exported
                                   metrics. Valid options are: 'CLUSTER' (cluster name),
-                                  'HOST_ID' (UUID of the node), 'NODE' (node endpoint IP
-                                  address), 'DATACENTER' (DC name), 'RACK' (rack name).
-                                  The default is to include all global labels except
-                                  HOST_ID. To disable all global labels use
-                                  --no-global-labels.
+                                  'NODE' (node endpoint IP address), 'DATACENTER' (DC
+                                  name), 'RACK' (rack name). The default is to include
+                                  all global labels except HOST_ID. To disable all
+                                  global labels use --no-global-labels.
       -t, --table-labels=LABEL[,LABEL...]
                                 Select which labels to include on table-level metrics.
                                   Valid options are: 'TABLE_TYPE' (table, view or
@@ -131,6 +129,20 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   tables & views, compaction-related metrics only). The
                                   default is to include all table labels. To disable all
                                   table labels use --no-table-labels.
+          --table-metrics=FILTER
+                                Select which table-level metrics to expose. Valid
+                                  options are: 'ALL' (all metrics), 'HISTOGRAMS' (only
+                                  histograms & summaries), 'NONE' (no metrics). The
+                                  default is 'ALL'.
+          --keyspace-metrics=FILTER
+                                Select which keyspace-level aggregate metrics to expose.
+                                  Valid options are: 'ALL' (all metrics), 'HISTOGRAMS'
+                                  (only histograms & summaries), 'NONE' (no metrics).
+                                  The default is 'HISTOGRAMS'.
+          --node-metrics=FILTER Select which node-level aggregate metrics to expose.
+                                  Valid options are: 'ALL' (all metrics), 'HISTOGRAMS'
+                                  (only histograms & summaries), 'NONE' (no metrics).
+                                  The default is 'HISTOGRAMS'.
           --enable-per-thread-cpu-times
                                 Collect per-thread CPU times, where each thread gets its
                                   own time-series. (EXPERIMENTAL)
@@ -139,7 +151,6 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   and export the results.
           --exclude-keyspaces=<excludedKeyspaces>
     
-          --no-global-labels    Disable all global labels.
       -e, --exclude=EXCLUSION...
                                 Exclude a metric family or MBean from exposition.
                                   EXCLUSION may be the full name of a metric family
@@ -153,6 +164,7 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   prefixed with '#' are considered comments and are
                                   ignored. This option may be specified more than once
                                   to define multiple exclusions.
+          --no-global-labels    Disable all global labels.
           --no-table-labels     Disable all table labels.
           --no-fast-float       Disable the use of fast float -> ascii conversion.
           --exclude-system-tables
@@ -188,8 +200,11 @@ The available command line options may be seen by passing `-h`/`--help`:
           --cql-user=NAME       CQL authentication user name.
           --cql-password=PASSWORD
                                 CQL authentication password.
+      -v, --verbose             Enable verbose logging. Multiple invocations increase
+                                  the verbosity.
       -h, --help                Show this help message and exit.
       -V, --version             Print version information and exit.
+
 
 
 
@@ -254,8 +269,12 @@ For exporters that run as a separate process there is additional overhead of int
 
 The exporter attempts to follow Prometheus' best practices for metric names, labels and data types.
 
-Cassandras built-in aggregate metrics, such as the table-related metrics at the keyspace and node level, are skipped.
-Instead only the table-level metrics are exported &mdash; aggregates can be computed on-the-fly using PromQL queries or once using Prometheus recording rules.
+Cassandra has keyspace- and node-level metrics that are aggregates of the per-table metrics. By default, only a subset of these
+aggregate metrics, specifically histograms, are exposed by *cassandra-exporter*. All other keyspace- and node-level
+metrics are skipped in favour of only exporting the per-table metrics. The rationale behind this is that apart from the histograms,
+the aggregate metrics are essentially duplicates. If they are needed they may be computed on-the-fly via PromQL or
+once, at scrape time, using Prometheus recording rules.  
+
 
 Unlike the metrics exported via JMX, where each table metric has a unique name, Cassandras metrics are coalesced when appropriate so they share the same exported metric family name, opting for *labels* to differentiate individual time series.
 For example, each table level metric has a constant name and at minimum a `table` & `keyspace` label, which allows for complex PromQL queries.
@@ -297,13 +316,13 @@ Element                                              | Value
 ### Global Labels
 
 The exporter does attach global labels to the exported metrics.
-These may be configured with the `--global-labels` (or disabled via `--no-global-labels) CLI option.
+These may be configured with the `--global-labels` (or disabled via `--no-global-labels`) CLI option.
 
 These labels are:
 
 - `cassandra_cluster`
 
-    The name of the cluster, as specified in cassandra.yaml.
+    The name of the cluster, as specified in `cassandra.yaml`.
     
 - `cassandra_host_id`
 
