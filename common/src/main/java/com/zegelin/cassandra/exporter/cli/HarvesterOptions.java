@@ -105,6 +105,25 @@ public class HarvesterOptions {
         this.tableLabels = EnumSet.noneOf(FactoriesSupplier.TableLabels.class);
     }
 
+    private static final String FILTER_COMMON_HELP = "Valid options are: " +
+            "'ALL' (all metrics), " +
+            "'HISTOGRAMS' (only histograms & summaries), " +
+            "'NONE' (no metrics). " +
+            "The default is '${DEFAULT-VALUE}'.";
+
+    @Option(names = "--table-metrics", paramLabel = "FILTER",
+            description = "Select which table-level metrics to expose. " + FILTER_COMMON_HELP)
+    public FactoriesSupplier.TableMetricScope.Filter tableMetricsFilter = FactoriesSupplier.TableMetricScope.Filter.ALL;
+
+    @Option(names = "--keyspace-metrics", paramLabel = "FILTER",
+            description = "Select which keyspace-level aggregate metrics to expose. " + FILTER_COMMON_HELP)
+    public FactoriesSupplier.TableMetricScope.Filter keyspaceMetricsFilter = FactoriesSupplier.TableMetricScope.Filter.HISTOGRAMS;
+
+    @Option(names = "--node-metrics", paramLabel = "FILTER",
+            description = "Select which node-level aggregate metrics to expose. " + FILTER_COMMON_HELP)
+    public FactoriesSupplier.TableMetricScope.Filter nodeMetricsFilter = FactoriesSupplier.TableMetricScope.Filter.HISTOGRAMS;
+
+
 
     @Option(names = "--no-fast-float",
             description = "Disable the use of fast float -> ascii conversion.")
