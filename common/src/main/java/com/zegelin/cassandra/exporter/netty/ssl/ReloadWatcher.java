@@ -7,20 +7,22 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.util.Collection;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class ReloadWatcher {
     private static final Logger logger = LoggerFactory.getLogger(ReloadWatcher.class);
 
+    private static final long RELOAD_MARGIN_MILLIS = 1000;
     private final long intervalInMs;
     private final Collection<File> files;
 
-    private long reloadAt;
+    private long nextReloadAt;
     private long reloadedAt;
 
     public ReloadWatcher(HttpServerOptions httpServerOptions) {
-        intervalInMs = httpServerOptions.sslReloadIntervalInSeconds * 1000;
+        intervalInMs = TimeUnit.SECONDS.toMillis(httpServerOptions.sslReloadIntervalInSeconds);
         files = Stream.of(httpServerOptions.sslServerKeyFile,
                 httpServerOptions.sslServerKeyPasswordFile,
                 httpServerOptions.sslServerCertificateFile,
@@ -33,12 +35,29 @@ public class ReloadWatcher {
     }
 
     private void reset(long now) {
-        reloadedAt = now;
-        reloadAt = now + intervalInMs;
-        logger.debug("Reset reloaded at to {}", reloadedAt);
+        // Create a 1 second margin to compensate for poor resolution of File.lastModified()
+        reloadedAt = now - RELOAD_MARGIN_MILLIS;
+
+        nextReloadAt = now + intervalInMs;
+        logger.debug("Next reload at {}", nextReloadAt);
+    }
+
+    public synchronized void forceReload() {
+        if (!enabled()) {
+            return;
+        }
+
+        logger.info("Forced reload of exporter certificates on next scrape");
+
+        reloadedAt = 0L;
+        nextReloadAt = 0L;
     }
 
     boolean needReload() {
+        if (!enabled()) {
+            return false;
+        }
+
         long now = System.currentTimeMillis();
 
         if (timeToPoll(now)) {
@@ -48,8 +67,12 @@ public class ReloadWatcher {
         return false;
     }
 
+    private boolean enabled() {
+        return intervalInMs > 0;
+    }
+
     private boolean timeToPoll(long now) {
-        return intervalInMs > 0 && now > reloadAt;
+        return now > nextReloadAt;
     }
 
     private synchronized boolean reallyNeedReload(long now) {

@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLHandshakeException;
+import java.net.SocketAddress;
 
 /**
  * This handler will catch and suppress exceptions which are triggered when a client send a
@@ -21,9 +22,11 @@ public class SuppressingSslExceptionHandler extends ChannelHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        if (handshakeException(cause) || notAJdkSslRecord(cause)) {
+        if (handshakeException(cause)
+                || sslRecordException(cause)
+                || decoderSslRecordException(cause)) {
             try {
-                logger.info("Exception while processing SSL scrape request: {}", cause.getMessage());
+                logger.info("Exception while processing SSL scrape request from {}: {}", remotePeer(ctx), cause.getMessage());
                 logger.debug("Exception while processing SSL scrape request", cause);
             } finally {
                 ReferenceCountUtil.release(cause);
@@ -33,12 +36,24 @@ public class SuppressingSslExceptionHandler extends ChannelHandlerAdapter {
         }
     }
 
+    private SocketAddress remotePeer(ChannelHandlerContext ctx) {
+        if (ctx.channel() == null) {
+            return null;
+        }
+        return ctx.channel().remoteAddress();
+    }
+
     private boolean handshakeException(Throwable cause) {
         return cause instanceof DecoderException
                 && cause.getCause() instanceof SSLHandshakeException;
     }
 
-    private boolean notAJdkSslRecord(Throwable cause) {
+    private boolean sslRecordException(Throwable cause) {
         return cause instanceof NotSslRecordException;
+    }
+
+    private boolean decoderSslRecordException(Throwable cause) {
+        return cause instanceof DecoderException
+                && cause.getCause() instanceof NotSslRecordException;
     }
 }

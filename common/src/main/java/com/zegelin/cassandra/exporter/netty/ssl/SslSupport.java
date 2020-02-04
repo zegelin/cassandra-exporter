@@ -42,7 +42,8 @@ public class SslSupport {
         if (isEnabled()) {
             ch.pipeline()
                     .addFirst(createSslHandler(ch))
-                    .addLast(createSuppressingSslExceptionHandler());
+                    .addLast(new UnexpectedSslExceptionHandler(reloadWatcher))
+                    .addLast(new SuppressingSslExceptionHandler());
         }
     }
 
@@ -95,10 +96,6 @@ public class SslSupport {
         } else {
             logger.debug("No need to reload exporter SSL certificate");
         }
-    }
-
-    private ChannelHandler createSuppressingSslExceptionHandler() {
-        return new SuppressingSslExceptionHandler();
     }
 
     @VisibleForTesting
