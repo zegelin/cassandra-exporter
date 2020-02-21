@@ -2,9 +2,7 @@ package com.zegelin.prometheus.exposition.json;
 
 import com.google.common.escape.CharEscaperBuilder;
 import com.google.common.escape.Escaper;
-import com.zegelin.netty.Floats;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
+import com.zegelin.prometheus.exposition.ExpositionSink;
 
 final class JsonFragment {
     private JsonFragment() {}
@@ -19,42 +17,42 @@ final class JsonFragment {
             .addEscape('\\', "\\\\")
             .toEscaper();
 
-    static void writeNull(final ByteBuf buffer) {
-        ByteBufUtil.writeAscii(buffer, "null");
+    static void writeNull(final ExpositionSink<?> buffer) {
+        buffer.writeAscii("null");
     }
 
-    static void writeAsciiString(final ByteBuf buffer, final String string) {
+    static void writeAsciiString(final ExpositionSink<?> buffer, final String string) {
         JsonToken.DOUBLE_QUOTE.write(buffer);
-        ByteBufUtil.writeAscii(buffer, STRING_ESCAPER.escape(string));
-        JsonToken.DOUBLE_QUOTE.write(buffer);
-    }
-
-    static void writeUtf8String(final ByteBuf buffer, final String string) {
-        JsonToken.DOUBLE_QUOTE.write(buffer);
-        ByteBufUtil.writeUtf8(buffer, STRING_ESCAPER.escape(string));
+        buffer.writeAscii(STRING_ESCAPER.escape(string));
         JsonToken.DOUBLE_QUOTE.write(buffer);
     }
 
-    static void writeObjectKey(final ByteBuf buffer, final String key) {
-        writeAsciiString(buffer, key);
+    static void writeUtf8String(final ExpositionSink<?> buffer, final String string) {
+        JsonToken.DOUBLE_QUOTE.write(buffer);
+        buffer.writeUtf8(STRING_ESCAPER.escape(string));
+        JsonToken.DOUBLE_QUOTE.write(buffer);
+    }
+
+    static void writeObjectKey(final ExpositionSink<?> buffer, final String key) {
+        buffer.writeAscii(key);
         JsonToken.COLON.write(buffer);
     }
 
-    static void writeFloat(final ByteBuf buffer, final float f) {
+    static void writeFloat(final ExpositionSink<?> buffer, final float f) {
         if (Float.isNaN(f)) {
-            ByteBufUtil.writeAscii(buffer, "\"NaN\"");
+            buffer.writeAscii("\"NaN\"");
             return;
         }
 
         if (Float.isInfinite(f)) {
-            ByteBufUtil.writeAscii(buffer, (f < 0 ? "\"-Inf\"" : "\"+Inf\""));
+            buffer.writeAscii((f < 0 ? "\"-Inf\"" : "\"+Inf\""));
             return;
         }
 
-        Floats.writeFloatString(buffer, f);
+        buffer.writeFloat(f);
     }
 
-    static void writeLong(final ByteBuf buffer, final long l) {
-        ByteBufUtil.writeAscii(buffer, Long.toString(l));
+    static void writeLong(final ExpositionSink<?> buffer, final long l) {
+        buffer.writeAscii(Long.toString(l));
     }
 }

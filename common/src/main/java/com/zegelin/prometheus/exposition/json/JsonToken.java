@@ -1,6 +1,6 @@
 package com.zegelin.prometheus.exposition.json;
 
-import io.netty.buffer.ByteBuf;
+import com.zegelin.prometheus.exposition.ExpositionSink;
 
 enum JsonToken {
     OBJECT_START('{'),
@@ -17,7 +17,7 @@ enum JsonToken {
         this.encoded = (byte) c;
     }
 
-    void write(final ByteBuf buffer) {
+    void write(final ExpositionSink<?> buffer) {
         buffer.writeByte(encoded);
     }
 }

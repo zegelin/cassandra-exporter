@@ -1,23 +1,17 @@
 package com.zegelin.prometheus.exposition.text;
 
 import com.google.common.base.Stopwatch;
-import com.google.common.escape.CharEscaperBuilder;
-import com.google.common.escape.Escaper;
 import com.zegelin.netty.Resources;
 import com.zegelin.prometheus.domain.*;
+import com.zegelin.prometheus.exposition.ExpositionSink;
+import com.zegelin.prometheus.exposition.FormattedExposition;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.stream.ChunkedInput;
 
 import java.time.Instant;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.stream.Stream;
 
-public class TextFormatChunkedInput implements ChunkedInput<ByteBuf> {
+public class TextFormatExposition implements FormattedExposition {
     private enum State {
         BANNER,
         METRIC_FAMILY,
@@ -26,7 +20,7 @@ public class TextFormatChunkedInput implements ChunkedInput<ByteBuf> {
         EOF
     }
 
-    private static final ByteBuf BANNER = Resources.asByteBuf(TextFormatChunkedInput.class, "banner.txt");
+    private static final ByteBuf BANNER = Resources.asByteBuf(TextFormatExposition.class, "banner.txt");
 
     private final Iterator<MetricFamily> metricFamiliesIterator;
 
@@ -43,7 +37,7 @@ public class TextFormatChunkedInput implements ChunkedInput<ByteBuf> {
     private final Stopwatch stopwatch = Stopwatch.createUnstarted();
 
 
-    public TextFormatChunkedInput(final Stream<MetricFamily> metricFamilies, final Instant timestamp, final Labels globalLabels, final boolean includeHelp) {
+    public TextFormatExposition(final Stream<MetricFamily> metricFamilies, final Instant timestamp, final Labels globalLabels, final boolean includeHelp) {
         this.metricFamiliesIterator = metricFamilies.iterator();
         this.timestamp = timestamp;
         this.globalLabels = globalLabels;
@@ -56,15 +50,12 @@ public class TextFormatChunkedInput implements ChunkedInput<ByteBuf> {
     }
 
     @Override
-    public void close() {}
-
-
-    private void nextSlice(final ByteBuf chunkBuffer) {
+    public void nextSlice(final ExpositionSink<?> chunkBuffer) {
         switch (state) {
             case BANNER:
                 stopwatch.start();
 
-                chunkBuffer.writeBytes(BANNER.slice());
+                chunkBuffer.writeBytes(BANNER.nioBuffer());
 
                 state = State.METRIC_FAMILY;
                 return;
@@ -101,8 +92,8 @@ public class TextFormatChunkedInput implements ChunkedInput<ByteBuf> {
 
             case FOOTER:
                 stopwatch.stop();
-                ByteBufUtil.writeAscii(chunkBuffer, "\n\n# Thanks and come again!\n\n");
-                ByteBufUtil.writeAscii(chunkBuffer, String.format("# Wrote %s metrics for %s metric families in %s\n", metricCount, metricFamilyCount, stopwatch.toString()));
+                chunkBuffer.writeAscii("\n\n# Thanks and come again!\n\n");
+                chunkBuffer.writeAscii(String.format("# Wrote %s metrics for %s metric families in %s\n", metricCount, metricFamilyCount, stopwatch.toString()));
 
                 state = State.EOF;
                 return;
@@ -113,24 +104,5 @@ public class TextFormatChunkedInput implements ChunkedInput<ByteBuf> {
             default:
                 throw new IllegalStateException();
         }
-    }
-
-    @Override
-    public ByteBuf readChunk(final ChannelHandlerContext ctx) {
-        final ByteBuf chunkBuffer = ctx.alloc().buffer(1024 * 1024 * 5);
-
-        // add slices till we hit the chunk size (or slightly over it), or hit EOF
-        while (chunkBuffer.readableBytes() < 1024 * 1024 && state != State.EOF) {
-            try {
-                nextSlice(chunkBuffer);
-
-            } catch (final Exception e) {
-                chunkBuffer.release();
-
-                throw e;
-            }
-        }
-
-        return chunkBuffer;
     }
 }
