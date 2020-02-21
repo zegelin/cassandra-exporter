@@ -28,7 +28,7 @@ public class Agent implements Callable<Void> {
 
         final MBeanServerInterceptorHarvester harvester = new MBeanServerInterceptorHarvester(harvesterOptions);
 
-        final Server server = Server.start(httpServerOptions.listenAddresses, harvester, httpServerOptions.helpExposition);
+        final Server server = Server.start(harvester, httpServerOptions);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
