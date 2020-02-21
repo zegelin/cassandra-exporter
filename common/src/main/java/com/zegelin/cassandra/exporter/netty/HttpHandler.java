@@ -10,8 +10,9 @@ import com.zegelin.netty.Resources;
 import com.zegelin.cassandra.exporter.Harvester;
 import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
-import com.zegelin.prometheus.exposition.json.JsonFormatChunkedInput;
-import com.zegelin.prometheus.exposition.text.TextFormatChunkedInput;
+import com.zegelin.prometheus.exposition.json.JsonFormatExposition;
+import com.zegelin.prometheus.exposition.text.TextFormatExposition;
+import com.zegelin.prometheus.exposition.FormattedByteChannel;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelFuture;
@@ -19,9 +20,11 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.stream.ChunkedNioStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.channels.ReadableByteChannel;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -296,7 +299,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
                 lastWriteFuture = ctx.writeAndFlush(response);
 
                 if (request.getMethod() == HttpMethod.GET) {
-                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new TextFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp)));
+                    ReadableByteChannel byteChannel = new FormattedByteChannel(new TextFormatExposition(metricFamilyStream, timestamp, globalLabels, includeHelp));
+                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new ChunkedNioStream(byteChannel, FormattedByteChannel.MAX_CHUNK_SIZE)));
                 }
 
                 return lastWriteFuture;
@@ -308,7 +312,8 @@ public class HttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
                 lastWriteFuture = ctx.writeAndFlush(response);
 
                 if (request.getMethod() == HttpMethod.GET) {
-                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new JsonFormatChunkedInput(metricFamilyStream, timestamp, globalLabels, includeHelp)));
+                    ReadableByteChannel byteChannel = new FormattedByteChannel(new JsonFormatExposition(metricFamilyStream, timestamp, globalLabels, includeHelp));
+                    lastWriteFuture = ctx.writeAndFlush(new HttpChunkedInput(new ChunkedNioStream(byteChannel, FormattedByteChannel.MAX_CHUNK_SIZE)));
                 }
 
                 return lastWriteFuture;
