@@ -13,12 +13,12 @@ public class UnexpectedSslExceptionHandler extends ChannelHandlerAdapter {
 
     private final ReloadWatcher reloadWatcher;
 
-    UnexpectedSslExceptionHandler(ReloadWatcher reloadWatcher) {
+    UnexpectedSslExceptionHandler(final ReloadWatcher reloadWatcher) {
         this.reloadWatcher = reloadWatcher;
     }
 
     @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+    public void exceptionCaught(final ChannelHandlerContext ctx, final Throwable cause) {
         try {
             if (unexpectedMessage(cause)) {
                 logger.warn(cause.getMessage());
@@ -30,7 +30,7 @@ public class UnexpectedSslExceptionHandler extends ChannelHandlerAdapter {
         }
     }
 
-    private boolean unexpectedMessage(Throwable cause) {
+    private boolean unexpectedMessage(final Throwable cause) {
         return cause instanceof DecoderException
                 && cause.getCause() instanceof SSLException
                 && cause.getCause().getMessage().contains("unexpected_message");

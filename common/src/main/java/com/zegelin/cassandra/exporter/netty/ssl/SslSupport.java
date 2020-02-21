@@ -25,7 +25,7 @@ public class SslSupport {
     private final ReloadWatcher reloadWatcher;
     private final AtomicReference<SslContext> sslContextRef = new AtomicReference<>();
 
-    public SslSupport(HttpServerOptions httpServerOptions) {
+    public SslSupport(final HttpServerOptions httpServerOptions) {
         this.httpServerOptions = httpServerOptions;
 
         if (isEnabled()) {
@@ -38,7 +38,7 @@ public class SslSupport {
         }
     }
 
-    public void maybeAddHandler(SocketChannel ch) {
+    public void maybeAddHandler(final SocketChannel ch) {
         if (isEnabled()) {
             ch.pipeline()
                     .addFirst(createSslHandler(ch))
@@ -51,14 +51,14 @@ public class SslSupport {
         return httpServerOptions.sslMode != SslMode.DISABLE;
     }
 
-    private ChannelHandler createSslHandler(SocketChannel socketChannel) {
+    private ChannelHandler createSslHandler(final SocketChannel socketChannel) {
         maybeReloadContext();
 
         if (httpServerOptions.sslMode == SslMode.OPTIONAL) {
             if (httpServerOptions.sslClientAuthentication.getHostnameValidation()) {
                 return new OptionalSslHandler(sslContextRef.get()) {
                     @Override
-                    protected SslHandler newSslHandler(ChannelHandlerContext handlerContext, SslContext context) {
+                    protected SslHandler newSslHandler(final ChannelHandlerContext handlerContext, final SslContext context) {
                         return createValidatingSslHandler(context, handlerContext.alloc(), socketChannel.remoteAddress());
                     }
                 };
@@ -74,12 +74,14 @@ public class SslSupport {
         }
     }
 
-    private SslHandler createValidatingSslHandler(SslContext context, ByteBufAllocator allocator, InetSocketAddress peer) {
-        SslHandler handler = context.newHandler(allocator, peer.getHostString(), peer.getPort());
+    private SslHandler createValidatingSslHandler(final SslContext context, final ByteBufAllocator allocator, final InetSocketAddress peer) {
+        final SslHandler handler = context.newHandler(allocator, peer.getHostString(), peer.getPort());
 
-        SSLEngine engine = handler.engine();
-        SSLParameters sslParameters = engine.getSSLParameters();
+        final SSLEngine engine = handler.engine();
+
+        final SSLParameters sslParameters = engine.getSSLParameters();
         sslParameters.setEndpointIdentificationAlgorithm("HTTPS");
+
         engine.setSSLParameters(sslParameters);
 
         return handler;
@@ -90,11 +92,12 @@ public class SslSupport {
             try {
                 sslContextRef.set(sslContextFactory.createSslContext());
                 logger.info("Reloaded exporter SSL certificate");
-            } catch (IllegalArgumentException e) {
-                logger.error("Failed to reload exporter SSL certificate - Next poll in {} seconds", httpServerOptions.sslReloadIntervalInSeconds);
+
+            } catch (final IllegalArgumentException e) {
+                logger.error("Failed to reload exporter SSL certificate - Next poll in {} seconds.", httpServerOptions.sslReloadIntervalInSeconds);
             }
         } else {
-            logger.debug("No need to reload exporter SSL certificate");
+            logger.debug("No need to reload exporter SSL certificate.");
         }
     }
 

@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+// TODO: Switch to using java.time.* classes (Instant, Duration, etc) and java.nio.Path
 public class ReloadWatcher {
     private static final Logger logger = LoggerFactory.getLogger(ReloadWatcher.class);
 
@@ -21,7 +22,7 @@ public class ReloadWatcher {
     private long nextReloadAt;
     private long reloadedAt;
 
-    public ReloadWatcher(HttpServerOptions httpServerOptions) {
+    public ReloadWatcher(final HttpServerOptions httpServerOptions) {
         intervalInMs = TimeUnit.SECONDS.toMillis(httpServerOptions.sslReloadIntervalInSeconds);
         files = Stream.of(httpServerOptions.sslServerKeyFile,
                 httpServerOptions.sslServerKeyPasswordFile,
@@ -30,16 +31,16 @@ public class ReloadWatcher {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
 
-        logger.info("Watching {} for changes every {} seconds", this.files, httpServerOptions.sslReloadIntervalInSeconds);
+        logger.info("Watching {} for changes every {} seconds.", this.files, httpServerOptions.sslReloadIntervalInSeconds);
         reset(System.currentTimeMillis());
     }
 
-    private void reset(long now) {
+    private void reset(final long now) {
         // Create a 1 second margin to compensate for poor resolution of File.lastModified()
         reloadedAt = now - RELOAD_MARGIN_MILLIS;
 
         nextReloadAt = now + intervalInMs;
-        logger.debug("Next reload at {}", nextReloadAt);
+        logger.debug("Next reload at {}.", nextReloadAt);
     }
 
     public synchronized void forceReload() {
@@ -47,7 +48,7 @@ public class ReloadWatcher {
             return;
         }
 
-        logger.info("Forced reload of exporter certificates on next scrape");
+        logger.info("Forced reload of exporter certificates on next scrape.");
 
         reloadedAt = 0L;
         nextReloadAt = 0L;
@@ -58,7 +59,7 @@ public class ReloadWatcher {
             return false;
         }
 
-        long now = System.currentTimeMillis();
+        final long now = System.currentTimeMillis();
 
         if (timeToPoll(now)) {
             return reallyNeedReload(now);
@@ -71,11 +72,11 @@ public class ReloadWatcher {
         return intervalInMs > 0;
     }
 
-    private boolean timeToPoll(long now) {
+    private boolean timeToPoll(final long now) {
         return now > nextReloadAt;
     }
 
-    private synchronized boolean reallyNeedReload(long now) {
+    private synchronized boolean reallyNeedReload(final long now) {
         if (timeToPoll(now)) {
             try {
                 return anyFileModified();

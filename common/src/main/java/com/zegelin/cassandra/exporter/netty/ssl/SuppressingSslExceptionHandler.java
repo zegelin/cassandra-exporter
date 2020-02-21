@@ -21,13 +21,13 @@ public class SuppressingSslExceptionHandler extends ChannelHandlerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(SuppressingSslExceptionHandler.class);
 
     @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+    public void exceptionCaught(final ChannelHandlerContext ctx, final Throwable cause) {
         if (handshakeException(cause)
                 || sslRecordException(cause)
                 || decoderSslRecordException(cause)) {
             try {
                 logger.info("Exception while processing SSL scrape request from {}: {}", remotePeer(ctx), cause.getMessage());
-                logger.debug("Exception while processing SSL scrape request", cause);
+                logger.debug("Exception while processing SSL scrape request.", cause);
             } finally {
                 ReferenceCountUtil.release(cause);
             }
@@ -36,23 +36,23 @@ public class SuppressingSslExceptionHandler extends ChannelHandlerAdapter {
         }
     }
 
-    private SocketAddress remotePeer(ChannelHandlerContext ctx) {
+    private SocketAddress remotePeer(final ChannelHandlerContext ctx) {
         if (ctx.channel() == null) {
             return null;
         }
         return ctx.channel().remoteAddress();
     }
 
-    private boolean handshakeException(Throwable cause) {
+    private boolean handshakeException(final Throwable cause) {
         return cause instanceof DecoderException
                 && cause.getCause() instanceof SSLHandshakeException;
     }
 
-    private boolean sslRecordException(Throwable cause) {
+    private boolean sslRecordException(final Throwable cause) {
         return cause instanceof NotSslRecordException;
     }
 
-    private boolean decoderSslRecordException(Throwable cause) {
+    private boolean decoderSslRecordException(final Throwable cause) {
         return cause instanceof DecoderException
                 && cause.getCause() instanceof NotSslRecordException;
     }

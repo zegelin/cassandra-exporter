@@ -26,7 +26,7 @@ public class SslContextFactory {
     }
 
     SslContext createSslContext() {
-        SslContextBuilder builder = getContextBuilder();
+        final SslContextBuilder builder = getContextBuilder();
 
         builder.sslProvider(httpServerOptions.sslImplementation.getProvider());
 
@@ -42,8 +42,9 @@ public class SslContextFactory {
 
         try {
             return builder.build();
-        } catch (SSLException e) {
-            throw new IllegalArgumentException("Failed to initialize an SSL context for the exporter", e);
+
+        } catch (final SSLException e) {
+            throw new IllegalArgumentException("Failed to initialize an SSL context for the exporter.", e);
         }
     }
 
@@ -60,12 +61,12 @@ public class SslContextFactory {
     private boolean hasServerKeyAndCert() {
         if (httpServerOptions.sslServerKeyFile != null) {
             checkArgument(httpServerOptions.sslServerCertificateFile != null,
-                    "A server certificate must be specified together with the server key for the exporter");
+                    "A server certificate must be specified together with the server key for the exporter.");
             return true;
         }
 
         checkArgument(httpServerOptions.sslServerCertificateFile == null,
-                "A server key must be specified together with the server certificate for the exporter");
+                "A server key must be specified together with the server certificate for the exporter.");
 
         return false;
     }
@@ -77,8 +78,9 @@ public class SslContextFactory {
 
         try {
             return Files.toString(httpServerOptions.sslServerKeyPasswordFile, UTF_8);
-        } catch (IOException e) {
-            throw new IllegalArgumentException("Unable to read SSL server key password file for the exporter", e);
+
+        } catch (final IOException e) {
+            throw new IllegalArgumentException("Unable to read SSL server key password file for the exporter.", e);
         }
     }
 
@@ -86,10 +88,11 @@ public class SslContextFactory {
         logger.warn("Running exporter in SSL mode with insecure self-signed certificate");
 
         try {
-            SelfSignedCertificate ssc = new SelfSignedCertificate();
+            final SelfSignedCertificate ssc = new SelfSignedCertificate();
             return SslContextBuilder.forServer(ssc.key(), ssc.cert());
-        } catch (CertificateException e) {
-            throw new IllegalArgumentException("Failed to create self-signed certificate for the exporter", e);
+
+        } catch (final CertificateException e) {
+            throw new IllegalArgumentException("Failed to create self-signed certificate for the exporter.", e);
         }
     }
 }

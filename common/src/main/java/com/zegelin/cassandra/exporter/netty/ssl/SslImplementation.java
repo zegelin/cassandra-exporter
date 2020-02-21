@@ -16,7 +16,7 @@ public enum SslImplementation {
         provider = null;
     }
 
-    SslImplementation(SslProvider provider) {
+    SslImplementation(final SslProvider provider) {
         this.provider = provider;
     }
 

@@ -11,7 +11,7 @@ public enum ClientAuthentication {
     private final ClientAuth clientAuth;
     private final boolean hostnameValidation;
 
-    ClientAuthentication(ClientAuth clientAuth, boolean hostnameValidation) {
+    ClientAuthentication(final ClientAuth clientAuth, final boolean hostnameValidation) {
         this.clientAuth = clientAuth;
         this.hostnameValidation = hostnameValidation;
     }
