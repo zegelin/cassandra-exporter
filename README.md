@@ -110,7 +110,17 @@ The available command line options may be seen by passing `-h`/`--help`:
                               [--jmx-service-url=URL] [--jmx-user=NAME]
                               [--keyspace-metrics=FILTER] [--node-metrics=FILTER]
                               [--table-metrics=FILTER]
-                              [--exclude-keyspaces=<excludedKeyspaces>]... [-g=LABEL
+                              [--exclude-keyspaces=<excludedKeyspaces>]...
+                              [--ssl=MODE]
+                              [--ssl-client-authentication=CLIENT-AUTHENTICATION]
+                              [--ssl-implementation=IMPLEMENTATION]
+                              [--ssl-reload-interval=SECONDS]
+                              [--ssl-server-certificate=SERVER-CERTIFICATE]
+                              [--ssl-server-key=SERVER-KEY]
+                              [--ssl-server-key-password=SERVER-KEY-PASSWORD]
+                              [--ssl-trusted-certificate=TRUSTED-CERTIFICATE]
+                              [--ssl-ciphers=CIPHER[,CIPHER...]]...
+                              [--ssl-protocols=PROTOCOL[,PROTOCOL...]]... [-g=LABEL
                               [,LABEL...]]... [-l=[ADDRESS][:PORT]]... [-t=LABEL[,
                               LABEL...]]... [-e=EXCLUSION...]...
       -g, --global-labels=LABEL[,LABEL...]
@@ -180,6 +190,49 @@ The available command line options may be seen by passing `-h`/`--help`:
                                   or PORT will be interpreted as a decimal IPv4 address.
                                   This option may be specified more than once to listen
                                   on multiple addresses. Defaults to '0.0.0.0:9500'
+          --ssl=MODE            Enable or disable secured communication with SSL. Valid
+                                  modes: DISABLE, ENABLE, OPTIONAL. Optional support
+                                  requires Netty version 4.0.45 or later. Defaults to
+                                  DISABLE.
+          --ssl-implementation=IMPLEMENTATION
+                                SSL implementation to use for secure communication.
+                                  OpenSSL requires platform specific libraries. Valid
+                                  implementations: OPENSSL, JDK, DISCOVER. Defaults to
+                                  DISCOVER which will use OpenSSL if required libraries
+                                  are discoverable.
+          --ssl-ciphers=CIPHER[,CIPHER...]
+                                A comma-separated list of SSL cipher suites to enable,
+                                  in the order of preference. Defaults to system
+                                  settings.
+          --ssl-protocols=PROTOCOL[,PROTOCOL...]
+                                A comma-separated list of TLS protocol versions to
+                                  enable. Defaults to system settings.
+          --ssl-reload-interval=SECONDS
+                                Interval in seconds by which keys and certificates will
+                                  be reloaded. Defaults to 0 which will disable run-time
+                                  reload of certificates.
+          --ssl-server-key=SERVER-KEY
+                                Path to the private key file for the SSL server. Must be
+                                  provided together with a server-certificate. The file
+                                  should contain a PKCS#8 private key in PEM format.
+          --ssl-server-key-password=SERVER-KEY-PASSWORD
+                                Path to the private key password file for the SSL
+                                  server. This is only required if the server-key is
+                                  password protected. The file should contain a clear
+                                  text password for the server-key.
+          --ssl-server-certificate=SERVER-CERTIFICATE
+                                Path to the certificate chain file for the SSL server.
+                                  Must be provided together with a server-key. The file
+                                  should contain an X.509 certificate chain in PEM
+                                  format.
+          --ssl-client-authentication=CLIENT-AUTHENTICATION
+                                Set SSL client authentication mode. Valid options: NONE,
+                                  OPTIONAL, REQUIRE, VALIDATE. Defaults to NONE.
+          --ssl-trusted-certificate=TRUSTED-CERTIFICATE
+                                Path to trusted certificates for verifying the remote
+                                  endpoint's certificate. The file should contain an X.
+                                  509 certificate collection in PEM format. Defaults to
+                                  the system setting.
           --family-help=VALUE   Include or exclude metric family help in the exposition
                                   format. AUTOMATIC excludes help strings when the user
                                   agent is Prometheus and includes them for all other
