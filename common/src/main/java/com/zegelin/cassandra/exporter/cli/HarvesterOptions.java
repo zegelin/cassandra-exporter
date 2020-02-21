@@ -46,7 +46,7 @@ public class HarvesterOptions {
                     Files.lines(file)
                             .filter(line -> !line.startsWith("#"))
                             .map(String::trim)
-                            .filter(String::isEmpty)
+                            .filter(line -> !line.isEmpty())
                             .forEach(line -> this.exclusions.add(Harvester.Exclusion.create(line)));
 
                     processedExclusionFiles.add(file);
