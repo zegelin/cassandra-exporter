@@ -33,31 +33,43 @@ public class JMXHarvester extends Harvester {
         addCollectorFactory(RemoteGossiperMBeanMetricFamilyCollector.factory(metadataFactory));
     }
 
-    private Set<ObjectInstance> currentMBeans = ImmutableSet.of();
+    private Set<ObjectInstance> currentMBeans = Sets.newHashSet();
 
     void reconcileMBeans() {
         try {
-            final Set<ObjectInstance> mBeans = mBeanServerConnection.queryMBeans(null, null);
+            final Set<ObjectInstance> newMBeans = mBeanServerConnection.queryMBeans(null, null);
 
             // unregister
             {
-                final Set<ObjectInstance> removedMBeans = Sets.difference(currentMBeans, mBeans);
+                final Set<ObjectInstance> removedMBeans = Sets.difference(currentMBeans, newMBeans);
 
                 logger.debug("Removing {} old MBeans.", removedMBeans.size());
 
                 for (final ObjectInstance instance : removedMBeans) {
                     unregisterMBean(instance.getObjectName());
+                    currentMBeans.remove(instance);
                 }
             }
 
             // register
             {
-                final Set<ObjectInstance> addedMBeans = Sets.difference(mBeans, currentMBeans);
+                final Set<ObjectInstance> addedMBeans = Sets.difference(newMBeans, currentMBeans);
 
                 logger.debug("Found {} new MBeans.", addedMBeans.size());
 
                 for (final ObjectInstance instance : addedMBeans) {
-                    final MBeanInfo mBeanInfo = mBeanServerConnection.getMBeanInfo(instance.getObjectName());
+                    final MBeanInfo mBeanInfo;
+                    try {
+                        mBeanInfo = mBeanServerConnection.getMBeanInfo(instance.getObjectName());
+
+                    } catch (final InstanceNotFoundException e) {
+                        // We may get an InstanceNotFoundException if the mBean was
+                        // really short lived (such as for a repair job or similar)
+                        // and Cassandra unregistered it between the probe and this
+                        // instance being evaluated
+                        continue;
+                    }
+
                     final Descriptor mBeanDescriptor = mBeanInfo.getDescriptor();
 
                     final String interfaceClassName = (String) mBeanDescriptor.getFieldValue(JMX.INTERFACE_CLASS_NAME_FIELD);
@@ -79,7 +91,7 @@ public class JMXHarvester extends Harvester {
 
                     logger.debug("Registering MBean/MXBean {}.", instance);
 
-                    final boolean isMXBean = Boolean.valueOf((String) mBeanDescriptor.getFieldValue(JMX.MXBEAN_FIELD));
+                    final boolean isMXBean = Boolean.parseBoolean((String) mBeanDescriptor.getFieldValue(JMX.MXBEAN_FIELD));
 
                     final ObjectName objectName = instance.getObjectName();
                     final Object mBeanProxy;
@@ -90,10 +102,9 @@ public class JMXHarvester extends Harvester {
                     }
 
                     registerMBean(mBeanProxy, objectName);
+                    currentMBeans.add(instance);
                 }
             }
-
-            currentMBeans = mBeans;
 
         } catch (final Throwable e) {
             logger.error("Failed to reconcile MBeans.", e);
