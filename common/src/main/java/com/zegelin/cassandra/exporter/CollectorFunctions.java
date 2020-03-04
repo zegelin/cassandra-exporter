@@ -1,15 +1,24 @@
 package com.zegelin.cassandra.exporter;
 
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import com.zegelin.function.FloatFloatFunction;
 import com.zegelin.cassandra.exporter.collector.dynamic.FunctionalMetricFamilyCollector.CollectorFunction;
 import com.zegelin.cassandra.exporter.collector.dynamic.FunctionalMetricFamilyCollector.LabeledObjectGroup;
 import com.zegelin.prometheus.domain.*;
+import com.zegelin.prometheus.domain.Interval.Quantile;
+
 import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxCounterMBean;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxGaugeMBean;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxMeterMBean;
 import org.apache.cassandra.utils.EstimatedHistogram;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class CollectorFunctions {
@@ -124,7 +133,8 @@ public final class CollectorFunctions {
     /**
      * Collect a {@link JmxGaugeMBean} with a Cassandra {@link EstimatedHistogram} value as a Prometheus summary
      */
-    public static CollectorFunction<JmxGaugeMBean> histogramGaugeAsSummary(final FloatFloatFunction bucketScaleFunction) {
+    public static CollectorFunction<JmxGaugeMBean> histogramGaugeAsSummary(final FloatFloatFunction bucketScaleFunction,Set<Quantile> excludeQuantiles) {
+        Set<Quantile> includedQuantiles =excludeQuantiles==null?Interval.Quantile.STANDARD_PERCENTILES:Sets.difference(Interval.Quantile.STANDARD_PERCENTILES,excludeQuantiles);
         return group -> {
             final Stream<SummaryMetricFamily.Summary> summaryStream = group.labeledObjects().entrySet().stream()
                     .map(e -> new Object() {
@@ -135,12 +145,11 @@ public final class CollectorFunctions {
                         final long[] bucketData = (long[]) e.gauge.getValue();
 
                         if (bucketData.length == 0) {
-                            return new SummaryMetricFamily.Summary(e.labels, Float.NaN, Float.NaN, Interval.asIntervals(Interval.Quantile.STANDARD_PERCENTILES, q -> Float.NaN));
+                            return new SummaryMetricFamily.Summary(e.labels, Float.NaN, Float.NaN, Interval.asIntervals(includedQuantiles, q -> Float.NaN));
                         }
 
                         final EstimatedHistogram histogram = new EstimatedHistogram(bucketData);
-
-                        final Iterable<Interval> quantiles = Interval.asIntervals(Interval.Quantile.STANDARD_PERCENTILES, q -> bucketScaleFunction.apply((float) histogram.percentile(q.value)));
+                        final Iterable<Interval> quantiles = Interval.asIntervals(includedQuantiles, q -> bucketScaleFunction.apply((float) histogram.percentile(q.value)));
 
                         return new SummaryMetricFamily.Summary(e.labels, Float.NaN, histogram.count(), quantiles);
                     });
@@ -149,14 +158,14 @@ public final class CollectorFunctions {
         };
     }
 
-    public static CollectorFunction<JmxGaugeMBean> histogramGaugeAsSummary() {
-        return histogramGaugeAsSummary(l -> l);
+    public static CollectorFunction<JmxGaugeMBean> histogramGaugeAsSummary(Set<Quantile> excludeQuantiles) {
+        return histogramGaugeAsSummary((l -> l),excludeQuantiles);
     }
 
     /**
      * Collect a {@link SamplingCounting} as a Prometheus summary
      */
-    protected static CollectorFunction<SamplingCounting> samplingAndCountingAsSummary(final FloatFloatFunction quantileScaleFunction) {
+    protected static CollectorFunction<SamplingCounting> samplingAndCountingAsSummary(final FloatFloatFunction quantileScaleFunction,Set<Quantile> excludeQuantiles) {
         return group -> {
             final Stream<SummaryMetricFamily.Summary> summaryStream = group.labeledObjects().entrySet().stream()
                     .map(e -> new Object() {
@@ -164,8 +173,18 @@ public final class CollectorFunctions {
                         final SamplingCounting samplingCounting = e.getValue();
                     })
                     .map(e -> {
-                        final Iterable<Interval> quantiles = Iterables.transform(e.samplingCounting.getIntervals(), i -> i.transform(quantileScaleFunction));
-
+                        
+                        Iterator<Interval> itr = e.samplingCounting.getIntervals().iterator();
+                        ArrayList<Interval> filtered = Lists.newArrayList();
+                        while(itr.hasNext()) {
+                            Interval interval = itr.next();
+                            if(excludeQuantiles.contains(interval.quantile)) {
+                                continue;
+                            }
+                            filtered.add(interval);
+                        }
+                        
+                        final Iterable<Interval> quantiles = Iterables.transform(filtered, i -> i.transform(quantileScaleFunction));
                         return new SummaryMetricFamily.Summary(e.labels, Float.NaN, e.samplingCounting.getCount(), quantiles);
                     });
 
@@ -173,7 +192,7 @@ public final class CollectorFunctions {
         };
     }
 
-    public static CollectorFunction<SamplingCounting> samplingAndCountingAsSummary() {
-        return samplingAndCountingAsSummary(FloatFloatFunction.identity());
+    public static CollectorFunction<SamplingCounting> samplingAndCountingAsSummary(Set<Quantile> excludeQuantiles) {
+        return samplingAndCountingAsSummary(FloatFloatFunction.identity(),excludeQuantiles);
     }
 }
