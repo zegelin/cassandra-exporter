@@ -130,7 +130,7 @@ public class Application implements Callable<Void> {
         });
 
 
-        Server.start(httpServerOptions.listenAddresses, harvester, httpServerOptions.helpExposition);
+        Server.start(harvester, httpServerOptions);
 
         return null;
     }
