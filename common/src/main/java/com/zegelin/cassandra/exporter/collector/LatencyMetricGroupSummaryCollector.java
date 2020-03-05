@@ -2,13 +2,11 @@ package com.zegelin.cassandra.exporter.collector;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import com.zegelin.jmx.NamedObject;
 import com.zegelin.cassandra.exporter.MBeanGroupMetricFamilyCollector;
 import com.zegelin.cassandra.exporter.MetricValueConversionFunctions;
 import com.zegelin.cassandra.exporter.SamplingCounting;
 import com.zegelin.prometheus.domain.Interval;
-import com.zegelin.prometheus.domain.Interval.Quantile;
 import com.zegelin.prometheus.domain.Labels;
 import com.zegelin.prometheus.domain.MetricFamily;
 import com.zegelin.prometheus.domain.SummaryMetricFamily;
@@ -16,12 +14,8 @@ import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxCounterMBean;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry.JmxTimerMBean;
 
 import javax.management.ObjectName;
-
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Stream;
 
 import static com.zegelin.cassandra.exporter.CassandraMetricsUtilities.jmxTimerMBeanAsSamplingCounting;
@@ -79,23 +73,21 @@ public class LatencyMetricGroupSummaryCollector extends MBeanGroupMetricFamilyCo
     private final String name;
     private final String help;
     private final Map<Labels, LatencyMetricGroup> latencyMetricGroups;
-    private final Set<Quantile> excludeQuantiles;
 
-    private LatencyMetricGroupSummaryCollector(final String name, final String help, final Map<Labels, LatencyMetricGroup> latencyMetricGroups, Set<Quantile> excludeQuantiles) {
+    private LatencyMetricGroupSummaryCollector(final String name, final String help, final Map<Labels, LatencyMetricGroup> latencyMetricGroups) {
         this.name = name;
         this.help = help;
         this.latencyMetricGroups = ImmutableMap.copyOf(latencyMetricGroups);
-        this.excludeQuantiles=excludeQuantiles;
     }
 
 
-    public static LatencyMetricGroupSummaryCollector collectorForMBean(final String name, final String help, final Labels labels, final NamedObject<?> mBean,Set<Quantile> excludeQuantiles) {
+    public static LatencyMetricGroupSummaryCollector collectorForMBean(final String name, final String help, final Labels labels, final NamedObject<?> mBean) {
         final NamedObject<SamplingCounting> timer = (mBean.object instanceof JmxTimerMBean) ? jmxTimerMBeanAsSamplingCounting(mBean) : null;
         final NamedObject<JmxCounterMBean> counter = mBean.map((n, o) -> (o instanceof JmxCounterMBean) ? (JmxCounterMBean) o : null);
 
         final LatencyMetricGroup latencyMetricGroup = new LatencyMetricGroup(timer, counter);
 
-        return new LatencyMetricGroupSummaryCollector(name, help, ImmutableMap.of(labels, latencyMetricGroup),excludeQuantiles);
+        return new LatencyMetricGroupSummaryCollector(name, help, ImmutableMap.of(labels, latencyMetricGroup));
     }
 
     @Override
@@ -116,7 +108,7 @@ public class LatencyMetricGroupSummaryCollector extends MBeanGroupMetricFamilyCo
             newLatencyMetricGroups.merge(group.getKey(), group.getValue(), LatencyMetricGroup::merge);
         }
 
-        return new LatencyMetricGroupSummaryCollector(name, help, newLatencyMetricGroups,excludeQuantiles);
+        return new LatencyMetricGroupSummaryCollector(name, help, newLatencyMetricGroups);
     }
 
     @Override
@@ -137,7 +129,7 @@ public class LatencyMetricGroupSummaryCollector extends MBeanGroupMetricFamilyCo
             return null;
         }
 
-        return new LatencyMetricGroupSummaryCollector(name, help, newLatencyMetricGroups,excludeQuantiles);
+        return new LatencyMetricGroupSummaryCollector(name, help, newLatencyMetricGroups);
     }
 
     @Override
@@ -152,20 +144,10 @@ public class LatencyMetricGroupSummaryCollector extends MBeanGroupMetricFamilyCo
                     final float count = e.latencyMetricGroup.latencyTimer.object.getCount();
                     final float sum = microsecondsToSeconds(e.latencyMetricGroup.totalLatencyCounter.object.getCount());
 
-                   Iterator<Interval> itr=e.latencyMetricGroup.latencyTimer.object.getIntervals().iterator();
-                    ArrayList<Interval> filtered = Lists.newArrayList();
-                    while(itr.hasNext()) {
-                        Interval interval = itr.next();
-                        if(excludeQuantiles.contains(interval.quantile)) {
-                            continue;
-                        }
-                        filtered.add(interval);
-                    }
-                    
-                    final Iterable<Interval> quantiles = Iterables.transform(filtered,
+                    final Iterable<Interval> quantiles = Iterables.transform(e.latencyMetricGroup.latencyTimer.object.getIntervals(),
                             i -> i.transform(MetricValueConversionFunctions::nanosecondsToSeconds)
                     );
-                    
+
                     return new SummaryMetricFamily.Summary(e.labels, sum, count, quantiles);
                 });
 

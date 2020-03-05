@@ -154,7 +154,7 @@ public class HarvesterOptions {
         excludedKeyspaces.addAll(CASSANDRA_SYSTEM_KEYSPACES);
     }
     
-    public Set<Quantile> excludedHistoQuantiles = new HashSet<>();
+    public final Set<Quantile> excludedHistoQuantiles = new HashSet<>();
     @Option(names = {"--exclude-from-histogram"}, paramLabel = "EXCLUSION", arity = "1..*",
             description = "Select which quantiles to exclude from histogram metrics. The specified quantiles are excluded from all histogram/summary metrics" +
                     "Valid options are: P_50, P_75, P_95, P_98, P_99, P_99_9" +

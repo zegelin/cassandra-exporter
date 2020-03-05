@@ -78,7 +78,7 @@ public class Application implements Callable<Void> {
     @Option(names = "--cql-password", paramLabel = "PASSWORD", description = "CQL authentication password.")
     private String cqlPassword;
     
-    @Option(names = "--cql-ssl", paramLabel = "PASSWORD", description = "Native connection to be encrypted")
+    @Option(names = "--cql-ssl", paramLabel = "SSL", description = "Creates enctrypted DB connections.")
     private boolean ssl;
 
     @Option(names = {"-v", "--verbose"}, description = "Enable verbose logging. Multiple invocations increase the verbosity.")

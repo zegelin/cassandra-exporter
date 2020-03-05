@@ -147,7 +147,7 @@ public abstract class Harvester {
         this.exclusions = options.exclusions;
         this.enabledGlobalLabels = options.globalLabels;
         this.collectorTimingEnabled = options.collectorTimingEnabled;
-        this.excludedHistoQuantiles=options.excludedHistoQuantiles;
+        this.excludedHistoQuantiles = options.excludedHistoQuantiles;
     }
     
     public Set<Quantile> getExcludedHistoQuantiles() {
