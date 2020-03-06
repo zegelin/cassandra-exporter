@@ -147,7 +147,7 @@ public class Application implements Callable<Void> {
         if (cqlUser != null && cqlPassword != null) {
             clusterBuilder.withCredentials(cqlUser, cqlPassword);
         }
-        if(ssl) {
+        if (ssl) {
             clusterBuilder.withSSL();
         }
 

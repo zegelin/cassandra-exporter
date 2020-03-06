@@ -167,10 +167,10 @@ public class HarvesterOptions {
                     "The default is to include all quantiles. "
             )
     void setExcludeFromHistogram(final Set<String> values) {
-        values.forEach(e->{
-            Quantile q=Quantile.ALL_PERCENTILES.get(e);
-            if(q==null) {
-                throw new IllegalArgumentException(String.format("The specified exlusion quantile '%s' is invalid, value values are '%s'", e,Quantile.ALL_PERCENTILES.keySet()));
+        values.forEach( e -> {
+            Quantile q = Quantile.ALL_PERCENTILES.get(e);
+            if(q == null) {
+                throw new IllegalArgumentException(String.format("The specified exlusion quantile '%s' is invalid, value values are '%s'", e, Quantile.ALL_PERCENTILES.keySet()));
             }
             excludedHistoQuantiles.add(q); 
         });
