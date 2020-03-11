@@ -85,6 +85,6 @@ public class GarbageCollectorMXBeanMetricFamilyCollector extends MBeanGroupMetri
         metricFamilyStreamBuilder.add(new CounterMetricFamily("cassandra_jvm_gc_collection_count", "Total number of collections that have occurred (since JVM start).", collectionCountMetrics.build()));
         metricFamilyStreamBuilder.add(new CounterMetricFamily("cassandra_jvm_gc_estimated_collection_duration_seconds_total", "Estimated cumulative collection elapsed time (since JVM start).", collectionDurationTotalSecondsMetrics.build()));
         metricFamilyStreamBuilder.add(new GaugeMetricFamily("cassandra_jvm_gc_last_collection_duration_seconds", "Last collection duration.", lastGCDurationSecondsMetrics.build()));
-        return metricFamilyStreamBuilder.build().filter(mf -> exclusions.stream().noneMatch(ex -> ex.equals(mf.name)));
+        return metricFamilyStreamBuilder.build().filter(mf -> exclusions.stream().anyMatch(ex -> ex.equals(mf.name)));
     }
 }
