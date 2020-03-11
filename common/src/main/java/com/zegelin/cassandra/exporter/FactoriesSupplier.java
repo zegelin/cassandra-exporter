@@ -793,10 +793,12 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         // org.apache.cassandra.metrics.ThreadPoolMetrics
         {
             builder.add(threadPoolMetric(functionalCollectorConstructor(numericGaugeAsGauge()), "ActiveTasks", "active_tasks", null));
+            builder.add(threadPoolMetric(functionalCollectorConstructor(numericGaugeAsGauge()), "PendingTasks", "pending_tasks", null));
             builder.add(threadPoolMetric(functionalCollectorConstructor(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", null));
             builder.add(threadPoolMetric(functionalCollectorConstructor(counterAsCounter()), "TotalBlockedTasks", "blocked_tasks_total", null));
             builder.add(threadPoolMetric(functionalCollectorConstructor(counterAsGauge()), "CurrentlyBlockedTasks", "blocked_tasks", null));
             builder.add(threadPoolMetric(functionalCollectorConstructor(numericGaugeAsGauge()), "MaxPoolSize", "maximum_tasks", null));
+            builder.add(threadPoolMetric(functionalCollectorConstructor(numericGaugeAsGauge()), "MaxTasksQueued", "maximum_tasks_queued", null));
         }
 
 

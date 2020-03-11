@@ -2,7 +2,7 @@ package com.zegelin.prometheus.domain;
 
 import com.google.common.collect.ForwardingMap;
 import com.google.common.collect.ImmutableMap;
-import com.zegelin.prometheus.exposition.json.JsonFormatChunkedInput;
+import com.zegelin.prometheus.exposition.json.JsonFormatExposition;
 import com.zegelin.prometheus.exposition.text.TextFormatLabels;
 import io.netty.buffer.ByteBuf;
 
@@ -47,7 +47,7 @@ public final class Labels extends ForwardingMap<String, String> {
 
     public ByteBuf asJSONFormatUTF8EncodedByteBuf() {
         if (jsonFormatUTF8EncodedByteBuf == null) {
-            this.jsonFormatUTF8EncodedByteBuf = JsonFormatChunkedInput.formatLabels(labels);
+            this.jsonFormatUTF8EncodedByteBuf = JsonFormatExposition.formatLabels(labels);
         }
 
         return jsonFormatUTF8EncodedByteBuf;
@@ -55,9 +55,22 @@ public final class Labels extends ForwardingMap<String, String> {
 
     @Override
     protected void finalize() throws Throwable {
-        this.plainTextFormatUTF8EncodedByteBuf.release();
-        this.jsonFormatUTF8EncodedByteBuf.release();
+        try {
+            maybeRelease();
+        } finally {
+            super.finalize();
+        }
+    }
 
-        super.finalize();
+    private void maybeRelease() {
+        if (this.plainTextFormatUTF8EncodedByteBuf != null) {
+            this.plainTextFormatUTF8EncodedByteBuf.release();
+            this.plainTextFormatUTF8EncodedByteBuf = null;
+        }
+
+        if (this.jsonFormatUTF8EncodedByteBuf != null) {
+            this.jsonFormatUTF8EncodedByteBuf.release();
+            this.jsonFormatUTF8EncodedByteBuf = null;
+        }
     }
 }

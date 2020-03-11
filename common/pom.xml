@@ -14,15 +14,24 @@
     <name>Cassandra Exporter Common</name>
 
     <properties>
-        <version.picocli>3.6.1</version.picocli>
+        <version.picocli>3.9.5</version.picocli>
     </properties>
 
     <dependencies>
+        <!-- Bring in improved resource leak detection in netty for utests. See #46-->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.0.53.Final</version>
+            <scope>provided</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.cassandra</groupId>
             <artifactId>cassandra-all</artifactId>
             <scope>provided</scope>
         </dependency>
+
 
         <dependency>
             <groupId>info.picocli</groupId>
@@ -45,6 +54,21 @@
             <version>2.28.2</version>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.12.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-tcnative-boringssl-static</artifactId>
+            <version>2.0.28.Final</version>
+            <scope>test</scope>
+        </dependency>
+
 
     </dependencies>
 </project>
