@@ -147,6 +147,6 @@ public class StorageServiceMBeanMetricFamilyCollector extends MBeanGroupMetricFa
             metricFamilyStreamBuilder.add(new GaugeMetricFamily("cassandra_storage_filesystem_unallocated_bytes", null, fileStoreUnallocatedSpaceMetrics.build()));
         }
 
-        return metricFamilyStreamBuilder.build().filter(mf -> exclusions.stream().anyMatch(ex -> ex.equals(mf.name)));
+        return metricFamilyStreamBuilder.build().filter(mf -> exclusions.contains(mf.name));
     }
 }
