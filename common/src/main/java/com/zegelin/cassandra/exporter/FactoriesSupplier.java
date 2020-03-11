@@ -43,7 +43,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         interface Modifier {
             /**
              * @param keyPropertyList Map of MBean ObjectName key properties and their values.
-             * @param labels The current map of labels to be provided to the collector constructor.
+             * @param labels          The current map of labels to be provided to the collector constructor.
              * @return true to continue building the collector, false to abort.
              */
             boolean modify(final Map<String, String> keyPropertyList, final Map<String, String> labels);
@@ -72,7 +72,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
             return this.withModifier((keyPropertyList, labels) -> {
                 labels.putAll(labelMaker.apply(keyPropertyList));
                 return true;
-           });
+            });
         }
 
         FactoryBuilder withHelp(final String help) {
@@ -518,14 +518,12 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     }
 
 
-
-
     private Factory cache(final Factory delegate, final long duration, final TimeUnit unit) {
         return CachingCollector.cache(delegate, duration, unit);
     }
 
     private Iterator<Factory> cache(final Iterator<Factory> delegates, final long duration, final TimeUnit unit) {
-        return Iterators.transform(delegates, delegate ->  CachingCollector.cache(delegate, duration, unit));
+        return Iterators.transform(delegates, delegate -> CachingCollector.cache(delegate, duration, unit));
     }
 
 
@@ -534,7 +532,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         final ImmutableList.Builder<Factory> builder = ImmutableList.builder();
 
         builder.add(FailureDetectorMBeanMetricFamilyCollector.factory(metadataFactory));
-        builder.add(cache(StorageServiceMBeanMetricFamilyCollector.factory(metadataFactory, excludedKeyspaces,exclusions), 5, TimeUnit.MINUTES));
+        builder.add(cache(StorageServiceMBeanMetricFamilyCollector.factory(metadataFactory, excludedKeyspaces, exclusions), 5, TimeUnit.MINUTES));
 
         builder.add(MemoryPoolMXBeanMetricFamilyCollector.FACTORY);
         builder.add(GarbageCollectorMXBeanMetricFamilyCollector.factory(exclusions));
@@ -637,7 +635,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
 
         // org.apache.cassandra.metrics.CompactionMetrics
         {
-            builder.add(compactionMetric(functionalCollectorConstructor(counterAsCounter()),"BytesCompacted", "bytes_compacted_total", "Total number of bytes compacted (since server start)."));
+            builder.add(compactionMetric(functionalCollectorConstructor(counterAsCounter()), "BytesCompacted", "bytes_compacted_total", "Total number of bytes compacted (since server start)."));
             builder.add(compactionMetric(functionalCollectorConstructor(numericGaugeAsCounter()), "CompletedTasks", "completed_tasks_total", "Total number of completed compaction tasks (since server start)."));
             // "PendingTasks" ignored -- it's an aggregate of the table-level metrics (see the table metric "PendingCompactions")
             builder.add(compactionMetric(functionalCollectorConstructor(meterAsCounter()), "TotalCompactionsCompleted", "completed_total", "Total number of compactions (since server start)."));
