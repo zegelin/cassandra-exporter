@@ -116,6 +116,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
     private final Set<TableLabels> tableLabels;
     private final Set<String> excludedKeyspaces;
     private final Map<TableMetricScope, TableMetricScope.Filter> tableMetricScopeFilters;
+    private final Set<Harvester.Exclusion> exclusions;
 
 
     public FactoriesSupplier(final MetadataFactory metadataFactory, final HarvesterOptions options) {
@@ -129,6 +130,7 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
                 .put(TableMetricScope.KEYSPACE, options.keyspaceMetricsFilter)
                 .put(TableMetricScope.TABLE, options.tableMetricsFilter)
                 .build();
+        this.exclusions = options.exclusions;
     }
 
 
@@ -532,10 +534,10 @@ public class FactoriesSupplier implements Supplier<List<Factory>> {
         final ImmutableList.Builder<Factory> builder = ImmutableList.builder();
 
         builder.add(FailureDetectorMBeanMetricFamilyCollector.factory(metadataFactory));
-        builder.add(cache(StorageServiceMBeanMetricFamilyCollector.factory(metadataFactory, excludedKeyspaces), 5, TimeUnit.MINUTES));
+        builder.add(cache(StorageServiceMBeanMetricFamilyCollector.factory(metadataFactory, excludedKeyspaces,exclusions), 5, TimeUnit.MINUTES));
 
         builder.add(MemoryPoolMXBeanMetricFamilyCollector.FACTORY);
-        builder.add(GarbageCollectorMXBeanMetricFamilyCollector.FACTORY);
+        builder.add(GarbageCollectorMXBeanMetricFamilyCollector.factory(exclusions));
         builder.add(BufferPoolMXBeanMetricFamilyCollector.FACTORY);
         builder.add(cache(OperatingSystemMXBeanMetricFamilyCollector.FACTORY, 5, TimeUnit.MINUTES));
         builder.add(ThreadMXBeanMetricFamilyCollector.factory(perThreadTimingEnabled));
