@@ -1,6 +1,5 @@
 package com.zegelin.cassandra.exporter;
 
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.zegelin.cassandra.exporter.cli.HarvesterOptions;
 import com.zegelin.cassandra.exporter.collector.RemoteGossiperMBeanMetricFamilyCollector;
